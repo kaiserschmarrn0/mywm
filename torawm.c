@@ -34,16 +34,16 @@ static void tora_wrap(xcb_window_t ch) {
   f.c = ch;
   f.p = xcb_generate_id(c);
   xcb_create_window(c,
-			XCB_COPY_FROM_PARENT,
-			f.p,
+      XCB_COPY_FROM_PARENT,
+      f.p,
       s->root,
-			0, 0,
-			640, 480,
-			0,
-			XCB_WINDOW_CLASS_INPUT_OUTPUT,
-			s->root_visual,
-			XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
-			v);
+      0, 0,
+      640, 480,
+      0,
+      XCB_WINDOW_CLASS_INPUT_OUTPUT,
+      s->root_visual,
+      XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
+      v);
   xcb_reparent_window(c, f.c, f.p, 0, TITLE);
   xcb_map_window(c, f.p);
   xcb_map_window(c, f.c);
@@ -146,16 +146,16 @@ main(void) {
   uint32_t v[] = { s->black_pixel };
 
   xcb_create_window(c,
-	    XCB_COPY_FROM_PARENT,
-		  ch,
+      XCB_COPY_FROM_PARENT,
+      ch,
       s->root,
-			0, 0,
-			1920, 1080,
-			0,
-			XCB_WINDOW_CLASS_INPUT_OUTPUT,
-			s->root_visual,
-			XCB_CW_BACK_PIXEL,
-			v);
+      0, 0,
+      1920, 1080,
+      0,
+      XCB_WINDOW_CLASS_INPUT_OUTPUT,
+      s->root_visual,
+      XCB_CW_BACK_PIXEL,
+      v);
 
   tora_wrap(ch); 
 
