@@ -143,19 +143,19 @@ main(void) {
   
   xcb_window_t ch = xcb_generate_id(c);
  
-  uint32_t v[2] = { s->black_pixel };
+  uint32_t v[] = { s->black_pixel };
 
   xcb_create_window(c,
-				XCB_COPY_FROM_PARENT,
-				ch,
-        s->root,
-				0, 0,
-				1920, 1080,
-				0,
-				XCB_WINDOW_CLASS_INPUT_OUTPUT,
-				s->root_visual,
-				XCB_CW_BACK_PIXEL,
-				v);
+	    XCB_COPY_FROM_PARENT,
+		  ch,
+      s->root,
+			0, 0,
+			1920, 1080,
+			0,
+			XCB_WINDOW_CLASS_INPUT_OUTPUT,
+			s->root_visual,
+			XCB_CW_BACK_PIXEL,
+			v);
 
   tora_wrap(ch); 
 
