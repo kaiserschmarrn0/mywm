@@ -67,6 +67,15 @@ static Frame * tora_ctf(xcb_window_t w) {
  return NULL;
 }
 
+/*static void tora_print() {
+ Frame *cur = dt;
+ while (cur) {
+  printf("parent: %d, child: %d    ", cur->p, cur->c);
+ 	cur = cur->n;
+ }
+ printf("\n");
+}*/
+
 static void tora_get_atoms(const char **names, xcb_atom_t *atoms, unsigned int count) {
  int i = 0;
  xcb_intern_atom_cookie_t cookies[count];
@@ -138,10 +147,6 @@ static void tora_map_notify(xcb_generic_event_t *ev) {
  xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)ev;
  if (e->override_redirect || !tora_check_managed(e->window) || tora_wtf(e->window, PARENT)) return;
  if (tora_wtf(e->event, PARENT)) return;
- if (tora_ctf(e->window)) {
-  printf("you already exist\n");
-  return;
- } 
  Frame *temp = dt;
  dt = malloc(sizeof(Frame));
  dt->p = xcb_generate_id(c);
@@ -211,11 +216,10 @@ static void tora_expose_notify(xcb_generic_event_t *ev) {
 static void tora_unmap_notify(xcb_generic_event_t *ev) {
  xcb_unmap_notify_event_t *e = (xcb_unmap_notify_event_t *)ev;
  if (e->event == s->root) return;
- Frame *found = tora_ctf(e->window);
+ Frame *found = tora_wtf(e->event, 0);
  if (!found) return;
- printf("pt 2 of 2\n");
  xcb_destroy_window(c, found->p);
- tora_remove_frame(e->window);
+ tora_remove_frame(found->p);
 }
 
 int
