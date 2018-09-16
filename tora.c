@@ -40,6 +40,7 @@ static void tora_print() {
   printf("parent: %d, child: %d    ", cur->p, cur->c);
  	cur = cur->n;
  }
+ printf("\n");
 }
 
 static Frame *tora_wtf(xcb_window_t w, int mode) {
@@ -65,18 +66,6 @@ static Frame *tora_excise(Frame *subject) {
  return subject;
 }
 
-static void tora_get_atoms(const char **names, xcb_atom_t *atoms, unsigned int count) {
- int i = 0;
- xcb_intern_atom_cookie_t cookies[count];
- xcb_intern_atom_reply_t *reply;
-	for (; i < count; i++) cookies[i] = xcb_intern_atom(c, 0, strlen(names[i]), names[i]);
-	for (i = 0; i < count; i++) {
-	 reply = xcb_intern_atom_reply(c, cookies[i], NULL);
-	 if (reply) atoms[i] = reply->atom;
-  free(reply);
- }	
-}
-
 static int tora_check_managed(xcb_window_t win) {
  xcb_ewmh_get_atoms_reply_t type;
  if (!xcb_ewmh_get_wm_window_type_reply(ewmh, xcb_ewmh_get_wm_window_type(ewmh, win), &type, NULL)) return 1;
@@ -89,13 +78,13 @@ static int tora_check_managed(xcb_window_t win) {
  return 1;
 }
 
-static int tora_focus(Frame *f) {
- if (dt) xcb_grab_button(c, 1, dt->p, XCB_EVENT_MASK_BUTTON_PRESS, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, XCB_NONE, XCB_NONE, XCB_BUTTON_INDEX_1, XCB_NONE);
- xcb_ungrab_button(c, XCB_BUTTON_INDEX_1, f->p, XCB_NONE);
+static void tora_focus(Frame *f) {
  tora_insert(tora_excise(f));
- xcb_set_input_focus(c, XCB_INPUT_FOCUS_POINTER_ROOT, f->c, XCB_CURRENT_TIME);
- xcb_configure_window(c, f->p, XCB_CONFIG_WINDOW_STACK_MODE, (uint32_t[]){ XCB_STACK_MODE_ABOVE });
+ xcb_set_input_focus(c, XCB_INPUT_FOCUS_POINTER_ROOT, dt->c, XCB_CURRENT_TIME);
+ xcb_configure_window(c, dt->p, XCB_CONFIG_WINDOW_STACK_MODE, (uint32_t[]){ XCB_STACK_MODE_ABOVE });
  tora_print();
+ if (dt->n) xcb_grab_button(c, 1, dt->n->p, XCB_EVENT_MASK_BUTTON_PRESS, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, XCB_NONE, XCB_NONE, XCB_BUTTON_INDEX_1, XCB_NONE); 
+ xcb_ungrab_button(c, XCB_BUTTON_INDEX_1, dt->p, XCB_NONE);
 }
 
 static void tora_close(Frame *f) {
@@ -115,6 +104,7 @@ static void tora_close(Frame *f) {
  xcb_icccm_get_wm_protocols_reply_wipe(&pro);
  xcb_unmap_window(c, dt->p);
  free(tora_excise(f));
+ if (dt) tora_focus(dt);
 }
 
 static void tora_moveresize(uint32_t mask, uint32_t* values) {
@@ -147,7 +137,7 @@ static void tora_map_notify(xcb_generic_event_t *ev) {
  tora_insert(new);
  xcb_map_window(c, new->p);
  xcb_map_window(c, new->c);
- tora_focus(dt);
+ tora_focus(new);
 }
 
 static void tora_button_press(xcb_generic_event_t *ev) {
@@ -162,7 +152,10 @@ static void tora_button_press(xcb_generic_event_t *ev) {
  if (!found) return;
  tora_focus(found);
  if (e->event == found->c) return;
- if (e->event_x < BORDER + TITLE / 2 && e->event_x > BORDER && e->event_y < BORDER + TITLE / 2 && e->event_y > BORDER) tora_close(found);
+ if (e->event_x < BORDER + TITLE / 2 && e->event_x > BORDER && e->event_y < BORDER + TITLE / 2 && e->event_y > BORDER) {
+  tora_close(found);
+  return;
+ }
  state = MOVE;
  g = xcb_get_geometry_reply(c, xcb_get_geometry(c, e->event), NULL);
  if (e->event_y < BORDER) state = UP;
@@ -211,6 +204,7 @@ static void tora_unmap_notify(xcb_generic_event_t *ev) {
  if (!found) return;
  xcb_destroy_window(c, found->p);
  free(tora_excise(found));
+ if (dt) tora_focus(dt);
 }
 
 static void tora_cleanup(void) {
@@ -241,7 +235,15 @@ main(void)
  xcb_ewmh_init_atoms_replies(ewmh, xcb_ewmh_init_atoms(c, ewmh), (void *)0);
 
  const char *WM_ATOM_NAME[] = { "WM_PROTOCOLS", "WM_DELETE_WINDOW", };
- tora_get_atoms(WM_ATOM_NAME, wm_atoms, WM_COUNT);
+ int i = 0;
+ xcb_intern_atom_cookie_t cookies[WM_COUNT];
+ xcb_intern_atom_reply_t *reply;
+	for (; i < WM_COUNT; i++) cookies[i] = xcb_intern_atom(c, 0, strlen(WM_ATOM_NAME[i]), WM_ATOM_NAME[i]);
+	for (i = 0; i < WM_COUNT; i++) {
+	 reply = xcb_intern_atom_reply(c, cookies[i], NULL);
+	 if (reply) wm_atoms[i] = reply->atom;
+  free(reply);
+ }
 
  static void (*events[XCB_NO_OPERATION])(xcb_generic_event_t *event);
  for (int i = 0; i < XCB_NO_OPERATION; i++) events[i] = NULL;
