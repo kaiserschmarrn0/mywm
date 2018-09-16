@@ -23,7 +23,7 @@ enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_COUNT };
 
 typedef struct Frame {
   xcb_window_t p, c;
-  struct Frame *n;
+  struct Frame *n, *b;
 } Frame;
 
 static xcb_connection_t	        *c;
@@ -32,49 +32,40 @@ static xcb_screen_t             *s;
 static xcb_get_geometry_reply_t *g;
 static xcb_atom_t               wm_atoms[WM_COUNT];
 static Frame                    *fwin = NULL;
-static Frame                    *dt;
+static Frame                    *dt = NULL;
 static int                      state = 0, x, y;
 
-static void tora_remove_frame(xcb_window_t w) {
- Frame *cur = dt, *prev = NULL;
- while (cur && cur->p != w) {
-  prev = cur;
-  cur = cur->n;
- }
- if (!cur) return;
- else if (cur->n && prev) prev->n = cur->n;
- else if (prev) prev->n = NULL;
- else if (cur->n) dt = cur->n;
- else dt = NULL;
- free(cur);
-}
-
-static Frame * tora_wtf(xcb_window_t w, int mode) {
- Frame *cur = dt;
- while (cur) {
-  if (cur->p == w) return cur;
- 	cur = cur->n;
- }
- return NULL;
-}
-
-static Frame * tora_ctf(xcb_window_t w) {
- Frame *cur = dt;
- while (cur) {
-  if (cur->c == w) return cur;
- 	cur = cur->n;
- }
- return NULL;
-}
-
-/*static void tora_print() {
+static void tora_print() {
  Frame *cur = dt;
  while (cur) {
   printf("parent: %d, child: %d    ", cur->p, cur->c);
  	cur = cur->n;
  }
- printf("\n");
-}*/
+ if (fwin) printf("\nfocwin: %d\n", fwin->p);
+}
+
+static Frame *tora_wtf(xcb_window_t w, int mode) {
+ Frame *cur = dt;
+ while (cur) {
+  if (cur->p == w) return cur;
+  cur = cur->n;
+ }
+ return NULL;
+}
+
+static void tora_insert(Frame *subject) {
+ subject->n = dt;
+ subject->b = NULL;
+ if (dt) dt->b = subject;
+ dt = subject;
+}
+
+static Frame *tora_excise(Frame *subject) {
+ if (subject->n) subject->n->b = subject->b;
+ if (subject->b) subject->b->n = subject->n;
+ else dt = subject->n;
+ return subject;
+}
 
 static void tora_get_atoms(const char **names, xcb_atom_t *atoms, unsigned int count) {
  int i = 0;
@@ -84,7 +75,7 @@ static void tora_get_atoms(const char **names, xcb_atom_t *atoms, unsigned int c
 	for (i = 0; i < count; i++) {
 	 reply = xcb_intern_atom_reply(c, cookies[i], NULL);
 	 if (reply) atoms[i] = reply->atom;
-   free(reply);
+  free(reply);
  }	
 }
 
@@ -101,11 +92,13 @@ static int tora_check_managed(xcb_window_t win) {
 }
 
 static int tora_focus(Frame *f) {
- if (fwin) xcb_grab_button(c, 1, fwin->c, XCB_EVENT_MASK_BUTTON_PRESS, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, XCB_NONE, XCB_NONE, XCB_BUTTON_INDEX_1, XCB_NONE);
- xcb_ungrab_button(c, XCB_BUTTON_INDEX_1, f->c, XCB_NONE);
+ if (fwin) xcb_grab_button(c, 1, fwin->p, XCB_EVENT_MASK_BUTTON_PRESS, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, XCB_NONE, XCB_NONE, XCB_BUTTON_INDEX_1, XCB_NONE);
+ xcb_ungrab_button(c, XCB_BUTTON_INDEX_1, f->p, XCB_NONE);
+ tora_insert(tora_excise(f));
  fwin = f;
  xcb_set_input_focus(c, XCB_INPUT_FOCUS_POINTER_ROOT, f->c, XCB_CURRENT_TIME);
  xcb_configure_window(c, f->p, XCB_CONFIG_WINDOW_STACK_MODE, (uint32_t[]){ XCB_STACK_MODE_ABOVE });
+ tora_print();
 }
 
 static void tora_close(Frame *f) {
@@ -124,7 +117,7 @@ static void tora_close(Frame *f) {
  if (!tick) xcb_kill_client(c, temp);
  xcb_icccm_get_wm_protocols_reply_wipe(&pro);
  xcb_unmap_window(c, fwin->p);
- tora_remove_frame(fwin->p);
+ free(tora_excise(f));
 }
 
 static void tora_moveresize(uint32_t mask, uint32_t* values) {
@@ -147,24 +140,24 @@ static void tora_map_notify(xcb_generic_event_t *ev) {
  xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)ev;
  if (e->override_redirect || !tora_check_managed(e->window) || tora_wtf(e->window, PARENT)) return;
  if (tora_wtf(e->event, PARENT)) return;
- Frame *temp = dt;
- dt = malloc(sizeof(Frame));
- dt->p = xcb_generate_id(c);
- dt->c = e->window;
- xcb_create_window(c, XCB_COPY_FROM_PARENT, dt->p, s->root, 0, 0, 640, 480, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, s->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (uint32_t[]){ s->white_pixel, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY });
- xcb_configure_window(c, dt->c, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ 640 - 2 * BORDER, 480 - TITLE - BORDER});
- xcb_reparent_window(c, dt->c, dt->p, BORDER, TITLE);
- dt->n = temp;
- xcb_map_window(c, dt->p);
- xcb_map_window(c, dt->c);
+ Frame *new = malloc(sizeof(Frame));
+ new->p = xcb_generate_id(c);
+ new->c = e->window;
+ new->n = new->b = NULL;
+ xcb_create_window(c, XCB_COPY_FROM_PARENT, new->p, s->root, 0, 0, 640, 480, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, s->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (uint32_t[]){ s->white_pixel, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY });
+ xcb_configure_window(c, new->c, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ 640 - 2 * BORDER, 480 - TITLE - BORDER});
+ xcb_reparent_window(c, new->c, new->p, BORDER, TITLE);
+ tora_insert(new);
+ xcb_map_window(c, new->p);
+ xcb_map_window(c, new->c);
  tora_focus(dt);
 }
 
 static void tora_button_press(xcb_generic_event_t *ev) {
  xcb_button_press_event_t *e = (xcb_button_press_event_t *)ev;
  if (e->detail != 1) return;
- Frame *found = tora_ctf(e->event);
- if (found) {
+ Frame *found = tora_wtf(e->event, PARENT);
+ if (found->c == e->child) {
   tora_focus(found);
   return;
  }
@@ -203,7 +196,8 @@ static void tora_button_release(xcb_generic_event_t *ev) {
   free(g);
   g = NULL;
  }
- state = MOVE;}
+ state = MOVE;
+}
 
 static void tora_expose_notify(xcb_generic_event_t *ev) {
  xcb_expose_event_t *e = (xcb_expose_event_t *)ev;
@@ -219,13 +213,29 @@ static void tora_unmap_notify(xcb_generic_event_t *ev) {
  Frame *found = tora_wtf(e->event, 0);
  if (!found) return;
  xcb_destroy_window(c, found->p);
- tora_remove_frame(found->p);
+ free(tora_excise(found));
+}
+
+static void tora_cleanup(void) {
+ Frame *cur = fwin, *temp;
+ if (!fwin) return;
+ while (cur) {
+  xcb_ungrab_button(c, XCB_BUTTON_INDEX_1, cur->p, XCB_NONE);
+  temp = cur;
+  cur = cur->n;
+  free(temp);
+ }
+ xcb_ewmh_connection_wipe(ewmh);
+ xcb_flush(c);
+ free(ewmh);
+ xcb_disconnect(c);
 }
 
 int
 main(void)
 {
  printf("Tora: >:)\n");
+ atexit(tora_cleanup);
 
  c = xcb_connect(NULL, NULL);
  s = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
@@ -261,6 +271,5 @@ main(void)
   free(ev);
  }
 
- xcb_disconnect(c);
  return 0;
 }
