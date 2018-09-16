@@ -31,7 +31,6 @@ static xcb_ewmh_connection_t    *ewmh;
 static xcb_screen_t             *s;
 static xcb_get_geometry_reply_t *g;
 static xcb_atom_t               wm_atoms[WM_COUNT];
-static Frame                    *fwin = NULL;
 static Frame                    *dt = NULL;
 static int                      state = 0, x, y;
 
@@ -41,7 +40,6 @@ static void tora_print() {
   printf("parent: %d, child: %d    ", cur->p, cur->c);
  	cur = cur->n;
  }
- if (fwin) printf("\nfocwin: %d\n", fwin->p);
 }
 
 static Frame *tora_wtf(xcb_window_t w, int mode) {
@@ -92,10 +90,9 @@ static int tora_check_managed(xcb_window_t win) {
 }
 
 static int tora_focus(Frame *f) {
- if (fwin) xcb_grab_button(c, 1, fwin->p, XCB_EVENT_MASK_BUTTON_PRESS, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, XCB_NONE, XCB_NONE, XCB_BUTTON_INDEX_1, XCB_NONE);
+ if (dt) xcb_grab_button(c, 1, dt->p, XCB_EVENT_MASK_BUTTON_PRESS, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, XCB_NONE, XCB_NONE, XCB_BUTTON_INDEX_1, XCB_NONE);
  xcb_ungrab_button(c, XCB_BUTTON_INDEX_1, f->p, XCB_NONE);
  tora_insert(tora_excise(f));
- fwin = f;
  xcb_set_input_focus(c, XCB_INPUT_FOCUS_POINTER_ROOT, f->c, XCB_CURRENT_TIME);
  xcb_configure_window(c, f->p, XCB_CONFIG_WINDOW_STACK_MODE, (uint32_t[]){ XCB_STACK_MODE_ABOVE });
  tora_print();
@@ -103,7 +100,7 @@ static int tora_focus(Frame *f) {
 
 static void tora_close(Frame *f) {
  int tick = 0;
- xcb_window_t temp = fwin->c;
+ xcb_window_t temp = dt->c;
  xcb_icccm_get_wm_protocols_reply_t pro;
  if (xcb_icccm_get_wm_protocols_reply(c, xcb_icccm_get_wm_protocols_unchecked(c, temp, ewmh->WM_PROTOCOLS), &pro, NULL))
   for (int i = 0; i < pro.atoms_len; i++)
@@ -116,7 +113,7 @@ static void tora_close(Frame *f) {
    }
  if (!tick) xcb_kill_client(c, temp);
  xcb_icccm_get_wm_protocols_reply_wipe(&pro);
- xcb_unmap_window(c, fwin->p);
+ xcb_unmap_window(c, dt->p);
  free(tora_excise(f));
 }
 
@@ -124,15 +121,15 @@ static void tora_moveresize(uint32_t mask, uint32_t* values) {
  int tick = 0;
  if (mask & XCB_CONFIG_WINDOW_X) tick++;
  if (mask & XCB_CONFIG_WINDOW_Y) tick++;
- xcb_configure_window(c, fwin->p, mask, values);
+ xcb_configure_window(c, dt->p, mask, values);
  if (mask & XCB_CONFIG_WINDOW_WIDTH) {
   uint32_t vw[] = { *(values + tick) - 2 * BORDER };
   tick++;
-  xcb_configure_window(c, fwin->c, XCB_CONFIG_WINDOW_WIDTH, vw);
+  xcb_configure_window(c, dt->c, XCB_CONFIG_WINDOW_WIDTH, vw);
  }
  if (mask & XCB_CONFIG_WINDOW_HEIGHT) {
   uint32_t vh[] = { *(values + tick) - TITLE - BORDER };
-  xcb_configure_window(c, fwin->c, XCB_CONFIG_WINDOW_HEIGHT, vh);
+  xcb_configure_window(c, dt->c, XCB_CONFIG_WINDOW_HEIGHT, vh);
  }
 }
 
@@ -179,7 +176,7 @@ static void tora_button_press(xcb_generic_event_t *ev) {
 
 static void tora_motion_notify(xcb_generic_event_t *ev) {
  xcb_motion_notify_event_t *e = (xcb_motion_notify_event_t *)ev;
- if (e->event == fwin->c) return;
+ if (e->event == dt->c) return;
  xcb_query_pointer_reply_t *p = xcb_query_pointer_reply(c, xcb_query_pointer(c, s->root), 0);
  if (state == MOVE) tora_moveresize(XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (uint32_t[]){ p->root_x - x, p->root_y - y });
  else
@@ -217,8 +214,7 @@ static void tora_unmap_notify(xcb_generic_event_t *ev) {
 }
 
 static void tora_cleanup(void) {
- Frame *cur = fwin, *temp;
- if (!fwin) return;
+ Frame *cur = dt, *temp;
  while (cur) {
   xcb_ungrab_button(c, XCB_BUTTON_INDEX_1, cur->p, XCB_NONE);
   temp = cur;
