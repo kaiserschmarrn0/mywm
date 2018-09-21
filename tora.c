@@ -3,6 +3,8 @@
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_keysyms.h>
 #include <X11/keysym.h>
+#include <X11/Xft/Xft.h>
+#include <X11/Xlib-xcb.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -56,21 +58,27 @@ static void tora_snap_right(int arg);
 
 static const key keys[] = {
 //	Modkey		     Key	      Function	        Arg
-	{ MOD, 		      XK_q,	    tora_close, 	    0                   },
-	{ MOD, 		      XK_Tab,   tora_cycle,	     0                   },
-	{ MOD, 		      XK_f,     tora_snap_max,	  0                   },
- { MOD | SHIFT, XK_f,     tora_fullscreen,	INTERNAL_FULLSCREEN },
- { MOD, 		      XK_Left,  tora_snap_left,	 0                   },
- { MOD,         XK_Right, tora_snap_right,	0                   },
+ { MOD,         XK_q,     tora_close,      0                   },
+ { MOD,         XK_Tab,   tora_cycle,      0                   },
+ { MOD,         XK_f,     tora_snap_max,   0                   },
+ { MOD | SHIFT, XK_f,     tora_fullscreen, INTERNAL_FULLSCREEN },
+ { MOD,         XK_Left,  tora_snap_left,  0                   },
+ { MOD,         XK_Right, tora_snap_right, 0                   },
 };
 
-static xcb_connection_t	        *c;
+static xcb_connection_t         *c;
 static xcb_ewmh_connection_t    *ewmh;
 static xcb_screen_t             *s;
 static xcb_get_geometry_reply_t *g;
 static xcb_atom_t               wm_atoms[WM_COUNT], net_atoms[NET_COUNT];
 static Frame                    *dt = NULL;
 static int                      state = 0, x, y;
+
+static XftFont        *title_font;
+static XftColor       title_color;
+static Display        *dpy;
+static xcb_colormap_t colormap;
+static Visual         *visual;
 
 static Frame *tora_wtf(xcb_window_t w) {
  Frame *cur = dt;
@@ -99,10 +107,10 @@ static void tora_get_atoms(const char **names, xcb_atom_t *atoms, unsigned int c
  int i = 0;
  xcb_intern_atom_cookie_t cookies[count];
  xcb_intern_atom_reply_t *reply;
-	for (; i < count; i++) cookies[i] = xcb_intern_atom(c, 0, strlen(names[i]), names[i]);
-	for (i = 0; i < count; i++) {
-	 reply = xcb_intern_atom_reply(c, cookies[i], NULL);
-	 if (reply) {
+ for (; i < count; i++) cookies[i] = xcb_intern_atom(c, 0, strlen(names[i]), names[i]);
+ for (i = 0; i < count; i++) {
+  reply = xcb_intern_atom_reply(c, cookies[i], NULL);
+  if (reply) {
    atoms[i] = reply->atom;
    free(reply);
   }
@@ -113,8 +121,8 @@ static int tora_check_managed(xcb_window_t win) {
  xcb_ewmh_get_atoms_reply_t type;
  if (!xcb_ewmh_get_wm_window_type_reply(ewmh, xcb_ewmh_get_wm_window_type(ewmh, win), &type, NULL)) return 1;
  for (unsigned int i = 0; i < type.atoms_len; i++)
-	 if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
-	  xcb_ewmh_get_atoms_reply_wipe(&type);
+  if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
+   xcb_ewmh_get_atoms_reply_wipe(&type);
    return 0;
   }
  xcb_ewmh_get_atoms_reply_wipe(&type);
@@ -137,9 +145,9 @@ static void tora_close(int arg) {
   for (int i = 0; i < pro.atoms_len; i++)
    if (wm_atoms[WM_DELETE_WINDOW] == pro.atoms[i]) {
     xcb_client_message_event_t ev = { XCB_CLIENT_MESSAGE, 32, 0, dt->c, wm_atoms[0] };
-		  ev.data.data32[0] = wm_atoms[WM_DELETE_WINDOW];
-		  ev.data.data32[1] = XCB_CURRENT_TIME;
-		  xcb_send_event(c, 0, dt->c, XCB_EVENT_MASK_NO_EVENT, (char *)&ev);
+    ev.data.data32[0] = wm_atoms[WM_DELETE_WINDOW];
+    ev.data.data32[1] = XCB_CURRENT_TIME;
+    xcb_send_event(c, 0, dt->c, XCB_EVENT_MASK_NO_EVENT, (char *)&ev);
     tick = 1;
    }
  if (!tick) xcb_kill_client(c, dt->c);
@@ -187,7 +195,10 @@ static void tora_restore_state() {
 
 static void tora_fullscreen(int arg) {
  if (!dt || dt->max == EXTERNAL_FULLSCREEN && arg == INTERNAL_FULLSCREEN) return;
- if (dt->max) {
+ if (dt->max == INTERNAL_FULLSCREEN && arg == EXTERNAL_FULLSCREEN) {
+  dt->max = INTERNAL_FULLSCREEN;
+  return;
+ } else if (dt->max) {
   dt->max = DEFAULT;
   tora_restore_state();
  } else {
@@ -336,8 +347,8 @@ static void tora_key_press(xcb_generic_event_t *ev) {
  xcb_key_symbols_free(keysyms);
  for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++)
   if (keysym == keys[i].key && keys[i].mod == e->state) {
-	  keys[i].function(keys[i].arg);
-	  break;
+   keys[i].function(keys[i].arg);
+   break;
   }
 }
 
@@ -366,8 +377,10 @@ int
 main(void)
 {
  printf("Tora: >:)\n");
- 
- c = xcb_connect(NULL, NULL);
+
+ dpy = XOpenDisplay(0);
+ c = XGetXCBConnection(dpy);
+ XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
  s = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
  xcb_change_window_attributes_checked(c, s->root, XCB_CW_EVENT_MASK, (uint32_t[]){ XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY });
  
@@ -383,6 +396,18 @@ main(void)
  xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(c);
  for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++) xcb_grab_key(c, 0, s->root, keys[i].mod, *xcb_key_symbols_get_keycode(keysyms, keys[i].key), XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
  xcb_key_symbols_free(keysyms);
+
+ /*if (title_font = XftFontOpenName(dpy, 0, "Walkway")) {
+  printf("font open success\n");
+ }
+ colormap = xcb_generate_id(c);
+ XVisualInfo xv;
+ int result = 0;
+ XVisualInfo *result_ptr = NULL;
+ result_ptr = XGetVisualInfo(dpy, VisualDepthMask, &xv, &result);
+ visual = result_ptr->visual;
+ xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, s->root, result_ptr->visualid);
+ XftColorAllocName(dpy, visual, colormap, "#000000",*/
 
  static void (*events[XCB_NO_OPERATION])(xcb_generic_event_t *event);
  for (int i = 0; i < XCB_NO_OPERATION; i++) events[i] = NULL;
