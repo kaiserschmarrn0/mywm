@@ -299,7 +299,7 @@ static void tora_button_press(xcb_generic_event_t *ev) {
   tora_close(0);
   return;
  }
- if (e->event_x < BORDER * 2 + TITLE && e->event_x > 2 * BORDER + TITLE / 2 && e->event_y < BORDER + TITLE / 2 && e->event_y > BORDER) {
+ if (e->event_x < BORDER * 2 + TITLE && e->event_x > 2 * BORDER + TITLE / 2 && e->event_y < BORDER + TITLE / 2 && e->event_y > BORDER && !dt->snap) {
   tora_snap_max(0);
   return;
  }
