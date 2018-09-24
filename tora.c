@@ -32,6 +32,8 @@
 #define INTERNAL_FULLSCREEN 1
 #define EXTERNAL_FULLSCREEN 2
 
+#define MIN(A, B) ((A) > (B) ? (A) : (B))
+
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_COUNT };
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT };
 
@@ -45,8 +47,12 @@ typedef struct {
 typedef struct Frame {
   xcb_window_t p, c;
   struct Frame *n, *b;
-  uint32_t x, y, w, h;
+  uint32_t x, y, w, h, rw, tx;
   int max, snap;
+  XftDraw *draw;
+  xcb_gcontext_t fgc, bgc;
+  char title[255];
+  xcb_pixmap_t titlemap;
 } Frame;
 
 static void tora_close(int arg);
@@ -57,7 +63,7 @@ static void tora_snap_left(int arg);
 static void tora_snap_right(int arg);
 
 static const key keys[] = {
-//	Modkey		     Key	      Function	        Arg
+// Modkey       Key       Function         Arg
  { MOD,         XK_q,     tora_close,      0                   },
  { MOD,         XK_Tab,   tora_cycle,      0                   },
  { MOD,         XK_f,     tora_snap_max,   0                   },
@@ -70,24 +76,26 @@ static xcb_connection_t         *c;
 static xcb_ewmh_connection_t    *ewmh;
 static xcb_screen_t             *s;
 static xcb_get_geometry_reply_t *g;
+static xcb_colormap_t           colormap;
 static xcb_atom_t               wm_atoms[WM_COUNT], net_atoms[NET_COUNT];
 static Frame                    *dt = NULL;
 static int                      state = 0, x, y;
+static XftFont                  *title_font;
+static XftColor                 title_color;
+static Display                  *dpy;
+static Visual                   *visual;
 
-static XftFont        *title_font;
-static XftColor       title_color;
-static Display        *dpy;
-static xcb_colormap_t colormap;
-static Visual         *visual;
-
-static Frame *tora_wtf(xcb_window_t w) {
- Frame *cur = dt;
- while (cur) {
-  if (cur->p == w) return cur;
-  cur = cur->n;
- }
- return NULL;
+#define FIND(A, B) static Frame *A(xcb_window_t w) { \
+ Frame *cur = dt; \
+ while (cur) { \
+  if (cur->B == w) return cur; \
+  cur = cur->n; \
+ } \
+ return NULL; \
 }
+
+FIND(tora_wtf, p)
+FIND(tora_ctf, c)
 
 static void tora_insert(Frame *subject) {
  subject->n = dt;
@@ -155,19 +163,45 @@ static void tora_close(int arg) {
  xcb_unmap_window(c, dt->p);
 }
 
-static void tora_moveresize(uint32_t mask, uint32_t* values) {
+static void tora_update_title(Frame *subject) {
+ xcb_ewmh_get_utf8_strings_reply_t ewmh_txt_prop;
+ if (xcb_ewmh_get_wm_name_reply(ewmh, xcb_ewmh_get_wm_name(ewmh, subject->c), &ewmh_txt_prop, NULL) && ewmh_txt_prop.strings && ewmh_txt_prop.strings_len)
+  strncpy(subject->title, ewmh_txt_prop.strings, MIN(ewmh_txt_prop.strings_len, 255));
+ 
+ xcb_free_pixmap(c, subject->titlemap);
+ subject->titlemap = xcb_generate_id(c);
+ 
+ XGlyphInfo ret;
+ int len = strlen(subject->title);
+ XftTextExtentsUtf8(dpy, title_font, (XftChar8 *)subject->title, len, &ret);
+
+ xcb_create_pixmap(c, s->root_depth, subject->titlemap, subject->p, ret.width, title_font->height);
+ xcb_poly_fill_rectangle(c, subject->titlemap, subject->bgc, 1, (xcb_rectangle_t[]){ { 0, 0, ret.width, title_font->height } });
+ if (subject->draw) XftDrawDestroy(subject->draw);
+ subject->draw = XftDrawCreate(dpy, subject->titlemap, DefaultVisual(dpy, 0), s->default_colormap);
+ XftDrawStringUtf8(subject->draw, &title_color, title_font, ret.x, title_font->ascent, (XftChar8 *)subject->title, len);
+ subject->tx = ret.width;
+}
+
+static void tora_draw_title(Frame *subject) {
+ xcb_copy_area(c, subject->titlemap, subject->p, subject->fgc, 0, 0, (subject->rw - subject->tx) / 2, 0, subject->tx, title_font->height);
+ xcb_poly_fill_rectangle(c, subject->p, subject->fgc, 2, (xcb_rectangle_t[]){ { BORDER + LWIDTH / 2, BORDER + LWIDTH / 2, TITLE / 2 - LWIDTH / 2, TITLE / 2 - LWIDTH / 2 }, { 2 * BORDER + LWIDTH + TITLE / 2, BORDER + LWIDTH / 2, TITLE / 2 - LWIDTH / 2, TITLE / 2 - LWIDTH / 2 } });
+}
+
+static void tora_moveresize(Frame *subject, uint32_t mask, uint32_t* values) {
  int tick = 0;
  if (mask & XCB_CONFIG_WINDOW_X) tick++;
  if (mask & XCB_CONFIG_WINDOW_Y) tick++;
- xcb_configure_window(c, dt->p, mask, values);
+ xcb_configure_window(c, subject->p, mask, values);
  if (mask & XCB_CONFIG_WINDOW_WIDTH) {
   uint32_t vw[] = { *(values + tick) - 2 * BORDER };
+  dt->rw = *(values + tick);
   tick++;
-  xcb_configure_window(c, dt->c, XCB_CONFIG_WINDOW_WIDTH, vw);
+  xcb_configure_window(c, subject->c, XCB_CONFIG_WINDOW_WIDTH, vw);
  }
  if (mask & XCB_CONFIG_WINDOW_HEIGHT) {
   uint32_t vh[] = { *(values + tick) - TITLE - BORDER };
-  xcb_configure_window(c, dt->c, XCB_CONFIG_WINDOW_HEIGHT, vh);
+  xcb_configure_window(c, subject->c, XCB_CONFIG_WINDOW_HEIGHT, vh);
  }
 }
 
@@ -190,7 +224,7 @@ static void tora_save_state() {
 
 static void tora_restore_state() {
  dt->snap = 0;
- tora_moveresize(XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ dt->x, dt->y, dt->w, dt->h });
+ tora_moveresize(dt, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ dt->x, dt->y, dt->w, dt->h });
 }
 
 static void tora_fullscreen(int arg) {
@@ -204,14 +238,14 @@ static void tora_fullscreen(int arg) {
  } else {
   dt->max = arg;
   tora_save_state();
-  tora_moveresize(XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ - BORDER, - TITLE, s->width_in_pixels + 2 * BORDER, s->height_in_pixels + TITLE + BORDER });
+  tora_moveresize(dt, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ - BORDER, - TITLE, s->width_in_pixels + 2 * BORDER, s->height_in_pixels + TITLE + BORDER });
  }
 }
 
 #define SNAP(A, B, C, D, E) static void A(int arg) { \
  if (!dt) return; \
  tora_save_state(); \
- tora_moveresize(XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ B, C, D, E });\
+ tora_moveresize(dt, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ B, C, D, E });\
 }
 
 SNAP(tora_snap_max, GAP, GAP + TOP, s->width_in_pixels - GAP * 2, (s->height_in_pixels - TOP - BOT) - GAP * 2)
@@ -232,14 +266,25 @@ static void tora_map_notify(xcb_generic_event_t *ev) {
  new->c = e->window;
  new->max = 0;
  new->snap = 0;
+ new->rw = 640; 
+ new->draw = NULL;
 
- xcb_create_window(c, XCB_COPY_FROM_PARENT, new->p, s->root, 0, 0, 640, 480, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, s->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (uint32_t[]){ s->white_pixel, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY });
+ xcb_create_window(c, XCB_COPY_FROM_PARENT, new->p, s->root, 0, 0, 640, 480, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, s->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (uint32_t[]){ s->white_pixel, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT });
  xcb_configure_window(c, new->c, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ 640 - 2 * BORDER, 480 - TITLE - BORDER});
  xcb_reparent_window(c, new->c, new->p, BORDER, TITLE);
  tora_insert(new);
  xcb_map_window(c, new->p);
  xcb_map_window(c, new->c);
  tora_focus(new);
+    
+ xcb_change_window_attributes(c, new->c, XCB_CW_EVENT_MASK, (uint32_t[]){ XCB_EVENT_MASK_PROPERTY_CHANGE });
+
+ new->fgc = xcb_generate_id(c);
+ new->bgc = xcb_generate_id(c);
+ xcb_create_gc(c, new->fgc, new->p, XCB_GC_FOREGROUND | XCB_GC_LINE_WIDTH | XCB_GC_GRAPHICS_EXPOSURES, (uint32_t[]){ 0x051519, LWIDTH, 0 });
+ xcb_create_gc(c, new->bgc, new->p, XCB_GC_FOREGROUND | XCB_GC_GRAPHICS_EXPOSURES, (uint32_t[]){ s->white_pixel, 0 });
+ 
+ tora_update_title(new);
 }
 
 static void tora_button_press(xcb_generic_event_t *ev) {
@@ -248,7 +293,7 @@ static void tora_button_press(xcb_generic_event_t *ev) {
  Frame *found = tora_wtf(e->event);
  if (!found) return;
  if (found != dt) tora_focus(found);
- if (e->event == found->c || found->max) return;
+ if (e->child == found->c || found->max) return;
 
  if (e->event_x < BORDER + TITLE / 2 && e->event_x > BORDER && e->event_y < BORDER + TITLE / 2 && e->event_y > BORDER) {
   tora_close(0);
@@ -303,12 +348,12 @@ static void tora_motion_notify(xcb_generic_event_t *ev) {
   }
   
   if (tick) xcb_ungrab_pointer(c, XCB_CURRENT_TIME);
-  else tora_moveresize(XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (uint32_t[]){ p->root_x - x, p->root_y - y });
+  else tora_moveresize(dt, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (uint32_t[]){ p->root_x - x, p->root_y - y });
  } else {
-  if (state & UP) tora_moveresize(XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ p->root_y - y, g->y + g->height - p->root_y + y });
-  else if (state & DOWN) tora_moveresize(XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ p->root_y - g->y + g->height - y });
-  if (state & LEFT) tora_moveresize(XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ p->root_x - x, g->x + g->width - p->root_x + x });
-  else if (state & RIGHT) tora_moveresize(XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ p->root_x - g->x + g->width - x });
+  if (state & UP) tora_moveresize(dt, XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ p->root_y - y, g->y + g->height - p->root_y + y });
+  else if (state & DOWN) tora_moveresize(dt, XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ p->root_y - g->y + g->height - y });
+  if (state & LEFT) tora_moveresize(dt, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ p->root_x - x, g->x + g->width - p->root_x + x });
+  else if (state & RIGHT) tora_moveresize(dt, XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ p->root_x - g->x + g->width - x });
  }
  free(p);
 }
@@ -324,20 +369,19 @@ static void tora_button_release(xcb_generic_event_t *ev) {
 
 static void tora_expose_notify(xcb_generic_event_t *ev) {
  xcb_expose_event_t *e = (xcb_expose_event_t *)ev;
- xcb_gcontext_t fc = xcb_generate_id(c);
- xcb_create_gc(c, fc, e->window, XCB_GC_FOREGROUND | XCB_GC_LINE_WIDTH | XCB_GC_GRAPHICS_EXPOSURES, (uint32_t[]){ s->black_pixel, LWIDTH, 0 }); 
- xcb_rectangle_t r[] = { { BORDER + LWIDTH / 2, BORDER + LWIDTH / 2, TITLE / 2 - LWIDTH / 2, TITLE / 2 - LWIDTH / 2 }, { 2 * BORDER + LWIDTH + TITLE / 2, BORDER + LWIDTH / 2, TITLE / 2 - LWIDTH / 2, TITLE / 2 - LWIDTH / 2 } };
- xcb_poly_rectangle(c, e->window, fc, 2, r);
+ Frame *found = tora_wtf(e->window);
+ if (!found) return;
+ tora_draw_title(found);
 }
 
 static void tora_unmap_notify(xcb_generic_event_t *ev) {
  xcb_unmap_notify_event_t *e = (xcb_unmap_notify_event_t *)ev;
- if (e->event == s->root) return;
  Frame *found = tora_wtf(e->event);
  if (!found) return;
  xcb_destroy_window(c, found->p);
  free(tora_excise(found));
  if (dt) tora_focus(dt);
+ xcb_ungrab_pointer(c, XCB_CURRENT_TIME);
 }
 
 static void tora_key_press(xcb_generic_event_t *ev) {
@@ -357,14 +401,40 @@ static void tora_client_message(xcb_generic_event_t *ev) {
  if (e->type == net_atoms[NET_WM_STATE] && ((unsigned)e->data.data32[2] == net_atoms[NET_FULLSCREEN] || (unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN])) tora_fullscreen(EXTERNAL_FULLSCREEN);
 }
 
+static void tora_property_notify(xcb_generic_event_t *ev) {
+ xcb_property_notify_event_t *e = (xcb_property_notify_event_t *)ev;
+ Frame *found = tora_ctf(e->window);
+ if (!found) return;
+ if ((e->atom == ewmh->_NET_WM_NAME || e->atom == XCB_ATOM_WM_NAME) && found) {
+  xcb_clear_area(c, 0, found->p, 0, 0, found->rw, TITLE);
+  tora_update_title(found);
+  tora_draw_title(found);
+ }
+}
+
+static void tora_configure_request(xcb_generic_event_t *ev) {
+ xcb_configure_request_event_t *e = (xcb_configure_request_event_t *)ev;
+ Frame *subject = tora_wtf(e->parent);
+ if (!subject) return;
+ tora_moveresize(subject, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ e->width, e->height });
+}
+
 static void tora_cleanup(void) {
  Frame *cur = dt, *temp;
  while (cur) {
+  XftDrawDestroy(cur->draw);
+  xcb_free_pixmap(c, cur->titlemap);
+  xcb_free_gc(c, cur->fgc);
+  xcb_free_gc(c, cur->bgc);
+
   xcb_ungrab_button(c, XCB_BUTTON_INDEX_1, cur->p, XCB_NONE);
   temp = cur;
   cur = cur->n;
   free(temp);
  }
+
+ XftFontClose(dpy, title_font);
+ XftColorFree(dpy, visual, colormap, &title_color);
 
  if (g) free(g);
  xcb_ewmh_connection_wipe(ewmh);
@@ -373,53 +443,56 @@ static void tora_cleanup(void) {
  xcb_disconnect(c);
 }
 
-int
-main(void)
-{
+int main(void) {
  printf("Tora: >:)\n");
 
  dpy = XOpenDisplay(0);
  c = XGetXCBConnection(dpy);
  XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
  s = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
+
  xcb_change_window_attributes_checked(c, s->root, XCB_CW_EVENT_MASK, (uint32_t[]){ XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY });
  
  ewmh = calloc(1, sizeof(xcb_ewmh_connection_t));
  xcb_ewmh_init_atoms_replies(ewmh, xcb_ewmh_init_atoms(c, ewmh), (void *)0);
 
+ /*xcb_atom_t net[] = { ewmh->_NET_SUPPORTED, ewmh->_NET_WM_NAME };
+ xcb_ewmh_set_supported(ewmh, 0, sizeof(net)/sizeof(*net), net);*/
  const char *WM_ATOM_NAME[] = { "WM_PROTOCOLS", "WM_DELETE_WINDOW", };
  tora_get_atoms(WM_ATOM_NAME, wm_atoms, WM_COUNT);
  const char *NET_ATOM_NAME[] = { "_NET_SUPPORTED", "_NET_WM_STATE_FULLSCREEN", "_NET_WM_STATE" };
  tora_get_atoms(NET_ATOM_NAME, net_atoms, NET_COUNT);
  xcb_change_property(c, XCB_PROP_MODE_REPLACE, s->root, net_atoms[NET_SUPPORTED], XCB_ATOM_ATOM, 32, NET_COUNT, net_atoms);
- 
+
  xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(c);
  for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++) xcb_grab_key(c, 0, s->root, keys[i].mod, *xcb_key_symbols_get_keycode(keysyms, keys[i].key), XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
  xcb_key_symbols_free(keysyms);
 
- /*if (title_font = XftFontOpenName(dpy, 0, "Walkway")) {
-  printf("font open success\n");
- }
+ title_font = XftFontOpenName(dpy, 0, "IBM Plex Sans:autohint=true:antialias=true:size=16");
+
  colormap = xcb_generate_id(c);
  XVisualInfo xv;
+ xv.depth = 32;
  int result = 0;
  XVisualInfo *result_ptr = NULL;
  result_ptr = XGetVisualInfo(dpy, VisualDepthMask, &xv, &result);
  visual = result_ptr->visual;
  xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, s->root, result_ptr->visualid);
- XftColorAllocName(dpy, visual, colormap, "#000000",*/
-
+ XRenderColor rc = { 5 / 255 * 65535, 21 / 255 * 65535, 25 / 255 * 65535, 65535 };
+ XftColorAllocValue(dpy, visual, colormap, &rc, &title_color);
+ 
  static void (*events[XCB_NO_OPERATION])(xcb_generic_event_t *event);
  for (int i = 0; i < XCB_NO_OPERATION; i++) events[i] = NULL;
- events[XCB_BUTTON_PRESS]   = tora_button_press;
- events[XCB_MOTION_NOTIFY]	 = tora_motion_notify;
- events[XCB_BUTTON_RELEASE] = tora_button_release;
- events[XCB_MAP_NOTIFY]	    = tora_map_notify;
- events[XCB_EXPOSE]         = tora_expose_notify;
- events[XCB_UNMAP_NOTIFY]	  = tora_unmap_notify;
- events[XCB_KEY_PRESS]	     = tora_key_press;
- events[XCB_CLIENT_MESSAGE]	= tora_client_message;
- //*events[XCB_CONFIGURE_NOTIFY]    = tora_configure_notify;
+ events[XCB_BUTTON_PRESS]    = tora_button_press;
+ events[XCB_MOTION_NOTIFY]	  = tora_motion_notify;
+ events[XCB_BUTTON_RELEASE]  = tora_button_release;
+ events[XCB_MAP_NOTIFY]	     = tora_map_notify;
+ events[XCB_EXPOSE]          = tora_expose_notify;
+ events[XCB_UNMAP_NOTIFY]	   = tora_unmap_notify;
+ events[XCB_KEY_PRESS]	      = tora_key_press;
+ events[XCB_CLIENT_MESSAGE]	 = tora_client_message;
+ events[XCB_PROPERTY_NOTIFY]	= tora_property_notify;
+ events[XCB_CONFIGURE_REQUEST]    = tora_configure_request;
  
  atexit(tora_cleanup);
 
