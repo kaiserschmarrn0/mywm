@@ -11,7 +11,7 @@
 #include <stdio.h>
 
 #define TOP    0
-#define BOT    0
+#define BOT    33
 #define GAP    8
 #define TITLE  32
 #define BORDER 8
@@ -32,7 +32,7 @@
 #define INTERNAL_FULLSCREEN 1
 #define EXTERNAL_FULLSCREEN 2
 
-#define MIN(A, B) ((A) > (B) ? (A) : (B))
+#define MIN(A, B) (((A) < (B)) ? (A) : (B))
 
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_COUNT };
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT };
@@ -51,7 +51,6 @@ typedef struct Frame {
   int max, snap;
   XftDraw *draw;
   xcb_gcontext_t fgc, bgc;
-  char title[255];
   xcb_pixmap_t titlemap;
 } Frame;
 
@@ -165,27 +164,28 @@ static void tora_close(int arg) {
 
 static void tora_update_title(Frame *subject) {
  xcb_ewmh_get_utf8_strings_reply_t ewmh_txt_prop;
- if (xcb_ewmh_get_wm_name_reply(ewmh, xcb_ewmh_get_wm_name(ewmh, subject->c), &ewmh_txt_prop, NULL) && ewmh_txt_prop.strings && ewmh_txt_prop.strings_len)
-  strncpy(subject->title, ewmh_txt_prop.strings, MIN(ewmh_txt_prop.strings_len, 255));
- 
+ char title[255];
+ int len = 0;
+ if (xcb_ewmh_get_wm_name_reply(ewmh, xcb_ewmh_get_wm_name(ewmh, subject->c), &ewmh_txt_prop, NULL) && ewmh_txt_prop.strings && ewmh_txt_prop.strings_len) {
+  len = MIN(ewmh_txt_prop.strings_len, 255);
+  printf("%d\n", len);
+  strncpy(title, ewmh_txt_prop.strings, len);
+ }
  xcb_free_pixmap(c, subject->titlemap);
  subject->titlemap = xcb_generate_id(c);
- 
  XGlyphInfo ret;
- int len = strlen(subject->title);
- XftTextExtentsUtf8(dpy, title_font, (XftChar8 *)subject->title, len, &ret);
-
+ XftTextExtentsUtf8(dpy, title_font, (XftChar8 *)title, len, &ret);
  xcb_create_pixmap(c, s->root_depth, subject->titlemap, subject->p, ret.width, title_font->height);
  xcb_poly_fill_rectangle(c, subject->titlemap, subject->bgc, 1, (xcb_rectangle_t[]){ { 0, 0, ret.width, title_font->height } });
  if (subject->draw) XftDrawDestroy(subject->draw);
  subject->draw = XftDrawCreate(dpy, subject->titlemap, DefaultVisual(dpy, 0), s->default_colormap);
- XftDrawStringUtf8(subject->draw, &title_color, title_font, ret.x, title_font->ascent, (XftChar8 *)subject->title, len);
+ XftDrawStringUtf8(subject->draw, &title_color, title_font, ret.x, title_font->ascent, (XftChar8 *)title, len);
  subject->tx = ret.width;
 }
 
 static void tora_draw_title(Frame *subject) {
  xcb_copy_area(c, subject->titlemap, subject->p, subject->fgc, 0, 0, (subject->rw - subject->tx) / 2, 0, subject->tx, title_font->height);
- xcb_poly_fill_rectangle(c, subject->p, subject->fgc, 2, (xcb_rectangle_t[]){ { BORDER + LWIDTH / 2, BORDER + LWIDTH / 2, TITLE / 2 - LWIDTH / 2, TITLE / 2 - LWIDTH / 2 }, { 2 * BORDER + LWIDTH + TITLE / 2, BORDER + LWIDTH / 2, TITLE / 2 - LWIDTH / 2, TITLE / 2 - LWIDTH / 2 } });
+ xcb_poly_fill_rectangle(c, subject->p, subject->fgc, 2, (xcb_rectangle_t[]){ { BORDER + LWIDTH / 2 - 1, BORDER + LWIDTH / 2, TITLE / 2 - LWIDTH / 2, TITLE / 2 - LWIDTH / 2 }, { 2 * BORDER + LWIDTH + TITLE / 2 - 1, BORDER + LWIDTH / 2, TITLE / 2 - LWIDTH / 2, TITLE / 2 - LWIDTH / 2 } });
 }
 
 static void tora_moveresize(Frame *subject, uint32_t mask, uint32_t* values) {
@@ -243,18 +243,21 @@ static void tora_fullscreen(int arg) {
 }
 
 #define SNAP(A, B, C, D, E) static void A(int arg) { \
- if (!dt) return; \
- tora_save_state(); \
- tora_moveresize(dt, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ B, C, D, E });\
+ if (!dt || dt->max) return; \
+ if (dt->snap) tora_restore_state(); \
+ else { \
+  tora_save_state(); \
+  tora_moveresize(dt, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ B, C, D, E });\
+ } \
 }
 
 SNAP(tora_snap_max, GAP, GAP + TOP, s->width_in_pixels - GAP * 2, (s->height_in_pixels - TOP - BOT) - GAP * 2)
 SNAP(tora_snap_left, GAP, GAP + TOP, s->width_in_pixels / 2 - BORDER * 1.5, s->height_in_pixels - GAP * 2 - TOP - BOT)
 SNAP(tora_snap_uleft, GAP, GAP + TOP, s->width_in_pixels / 2 - BORDER * 1.5, (s->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5)
-SNAP(tora_snap_dleft, GAP, (s->height_in_pixels - TOP) / 2 + BORDER / 2 + TOP, s->width_in_pixels / 2 - BORDER * 1.5, (s->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5)
+SNAP(tora_snap_dleft, GAP, (s->height_in_pixels - TOP - BOT) / 2 + BORDER / 2 + TOP, s->width_in_pixels / 2 - BORDER * 1.5, (s->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5)
 SNAP(tora_snap_right, s->width_in_pixels / 2 + GAP / 2, GAP + TOP, s->width_in_pixels / 2 - BORDER * 1.5, s->height_in_pixels - GAP * 2 - TOP - BOT)
 SNAP(tora_snap_uright, s->width_in_pixels / 2 + GAP / 2, GAP + TOP, s->width_in_pixels / 2 - BORDER * 1.5, (s->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5)
-SNAP(tora_snap_dright, s->width_in_pixels / 2 + GAP / 2, (s->height_in_pixels - TOP) / 2 + BORDER / 2 + TOP, s->width_in_pixels / 2 - BORDER * 1.5, (s->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5)
+SNAP(tora_snap_dright, s->width_in_pixels / 2 + GAP / 2, (s->height_in_pixels - TOP - BOT) / 2 + BORDER / 2 + TOP, s->width_in_pixels / 2 - BORDER * 1.5, (s->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5)
 
 static void tora_map_notify(xcb_generic_event_t *ev) {
  xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)ev;
@@ -299,7 +302,7 @@ static void tora_button_press(xcb_generic_event_t *ev) {
   tora_close(0);
   return;
  }
- if (e->event_x < BORDER * 2 + TITLE && e->event_x > 2 * BORDER + TITLE / 2 && e->event_y < BORDER + TITLE / 2 && e->event_y > BORDER && !dt->snap) {
+ if (e->event_x < BORDER * 2 + TITLE && e->event_x > 2 * BORDER + TITLE / 2 && e->event_y < BORDER + TITLE / 2 && e->event_y > BORDER) {
   tora_snap_max(0);
   return;
  }
@@ -406,8 +409,8 @@ static void tora_property_notify(xcb_generic_event_t *ev) {
  Frame *found = tora_ctf(e->window);
  if (!found) return;
  if ((e->atom == ewmh->_NET_WM_NAME || e->atom == XCB_ATOM_WM_NAME) && found) {
-  xcb_clear_area(c, 0, found->p, 0, 0, found->rw, TITLE);
   tora_update_title(found);
+  xcb_clear_area(c, 0, found->p, 0, 0, found->rw, TITLE);
   tora_draw_title(found);
  }
 }
@@ -416,7 +419,8 @@ static void tora_configure_request(xcb_generic_event_t *ev) {
  xcb_configure_request_event_t *e = (xcb_configure_request_event_t *)ev;
  Frame *subject = tora_wtf(e->parent);
  if (!subject) return;
- tora_moveresize(subject, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ e->width, e->height });
+ if (e->value_mask & XCB_CONFIG_WINDOW_WIDTH) tora_moveresize(subject, XCB_CONFIG_WINDOW_WIDTH, (uint32_t[]){ e->width });
+ if (e->value_mask & XCB_CONFIG_WINDOW_HEIGHT) tora_moveresize(subject, XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ e->height });
 }
 
 static void tora_cleanup(void) {
