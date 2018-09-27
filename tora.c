@@ -191,18 +191,32 @@ static void tora_draw_title(Frame *subject) {
 }
 
 static void tora_moveresize(Frame *subject, uint32_t mask, uint32_t* values) {
- int tick = 0;
- if (mask & XCB_CONFIG_WINDOW_X) tick++;
- if (mask & XCB_CONFIG_WINDOW_Y) tick++;
+ int xflag = 0, yflag = 0, wflag = 0, hflag = 0;
+ if (mask & XCB_CONFIG_WINDOW_X) xflag = 1;
+ if (mask & XCB_CONFIG_WINDOW_Y) yflag = 1;
+ if (mask & XCB_CONFIG_WINDOW_WIDTH) wflag = 1;
+ if (mask & XCB_CONFIG_WINDOW_HEIGHT) hflag = 1;
+ int tick = xflag + yflag;
+ xcb_size_hints_t *hints = &subject->hints;
+ if ((hints->flags & XCB_ICCCM_SIZE_HINT_P_RESIZE_INC) && (hints->flags & XCB_ICCCM_SIZE_HINT_BASE_SIZE)) {
+  xcb_size_hints_t *hints = &subject->hints;
+  if (wflag) {
+   uint32_t *v = values + tick;
+   *v -= (*v - 2 * BORDER - hints->base_width) % hints->width_inc;
+  }
+  if (hflag) {
+   uint32_t *v = values + tick + xflag;
+   *v -= (*v - BORDER - TITLE - hints->base_height) % hints->height_inc;
+  }
+ }
  xcb_configure_window(c, subject->p, mask, values);
- if (mask & XCB_CONFIG_WINDOW_WIDTH) {
+ if (wflag) {
   uint32_t vw[] = { *(values + tick) - 2 * BORDER };
   dt->rw = *(values + tick);
-  tick++;
   xcb_configure_window(c, subject->c, XCB_CONFIG_WINDOW_WIDTH, vw);
  }
- if (mask & XCB_CONFIG_WINDOW_HEIGHT) {
-  uint32_t vh[] = { *(values + tick) - TITLE - BORDER };
+ if (hflag) {
+  uint32_t vh[] = { *(values + tick + wflag) - TITLE - BORDER };
   xcb_configure_window(c, subject->c, XCB_CONFIG_WINDOW_HEIGHT, vh);
  }
 }
@@ -221,8 +235,7 @@ static void tora_save_state() {
  dt->w = temp->width;
  dt->h = temp->height;
  free(temp);
- dt->snap = 1;
-}
+ dt->snap = 1;}
 
 static void tora_restore_state() {
  dt->snap = 0;
@@ -431,8 +444,8 @@ static void tora_forget_frame(Frame *subject) {
  xcb_destroy_window(c, subject->p);
  if (!error || error->error_code != XCB_WINDOW) xcb_change_save_set(c, XCB_SET_MODE_DELETE, subject->c);
  if (error) free(error);
- if (dt && subject == dt) tora_focus(dt);
  free(tora_excise(subject));
+ tora_focus(subject);
  xcb_ungrab_pointer(c, XCB_CURRENT_TIME);
 }
 
