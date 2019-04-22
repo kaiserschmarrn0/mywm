@@ -5,14 +5,14 @@
 #define NUM_WS 4
 
 #define TOP 0
-#define BOT 34
-#define GAP 8
+#define BOT 28
+#define GAP 0
 #define BORDER 0
 
-#define TITLE 24
+#define TITLE 16
 
-#define FOCUSCOL 0xffbf616a
-#define UNFOCUSCOL 0xff81a1c1
+#define FOCUSCOL 0x4d484a
+#define UNFOCUSCOL 0x302e2f
 
 #define SNAP_MARGIN 5
 #define SNAP_CORNER 256

@@ -21,7 +21,7 @@
 #define MOVE_RESIZE_MASK MOVE_MASK | RESIZE_MASK
 
 enum { DEFAULT, MOVE, RESIZE, CYCLE, };
-enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_COUNT, };
+enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_STATE, WM_COUNT, };
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT, };
 
 typedef union {
@@ -37,6 +37,13 @@ typedef union {
 typedef struct window {
 	struct window *next;
 	struct window *prev;
+
+	/*int ws;
+	struct window *ws_next;
+	struct window *ws_prev;*/
+
+	struct window *above_next;
+	struct window *above_prev;
 
 	xcb_window_t child;
 	xcb_window_t parent;
@@ -163,19 +170,19 @@ static void map(window *subj) {
 	xcb_map_window(conn, subj->parent);
 }
 
+#define PARENT_EVENTS XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_BUTTON_PRESS | \
+		XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_ENTER_WINDOW | \
+		XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT
+
 static void release_events(window *subj) {
 	uint32_t mask = XCB_CW_EVENT_MASK;
-	uint32_t val = XCB_EVENT_MASK_KEY_RELEASE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-			XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
-			XCB_EVENT_MASK_ENTER_WINDOW;
+	uint32_t val = PARENT_EVENTS | XCB_EVENT_MASK_KEY_RELEASE;
 	xcb_change_window_attributes(conn, subj->parent, mask, &val); 
 }
 
 static void normal_events(window *subj) {
 	uint32_t mask = XCB_CW_EVENT_MASK;
-	uint32_t val = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_BUTTON_PRESS |
-			XCB_EVENT_MASK_BUTTON_RELEASE |
-			XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+	uint32_t val = PARENT_EVENTS;
 	xcb_change_window_attributes(conn, subj->parent, mask, &val); 
 }
 
@@ -282,7 +289,7 @@ static void rounded_corners(window *win) {
 	win_rects[i].x = 0;
 	win_rects[i].y = corner_height;
 	win_rects[i].width = w;
-	win_rects[i].height = h - corner_height;
+	win_rects[i].height = h - 2 * corner_height;
 	
 	i++;
 
@@ -292,7 +299,7 @@ static void rounded_corners(window *win) {
 		win_rects[i].width = w - 2 * rect_mask[i].x;
 		win_rects[i].height = rect_mask[i].height;
 	}
-	
+
 	xcb_shape_rectangles(conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING, XCB_CLIP_ORDERING_Y_SORTED, win->parent, 0, 0, rect_count, win_rects);
 }
 
@@ -346,10 +353,12 @@ static void update_geometry(window *win, uint32_t mask, uint32_t *vals) {
 	ev.override_redirect = 0;
 
 	xcb_send_event(conn, 0, win->child, XCB_EVENT_MASK_NO_EVENT, (char *)&ev);
-	
-	if (p > c) {
-		color_by_focus(win);
-	}
+
+	/*if (p > c && !win->is_snap) {
+		rounded_corners(win);	
+	} else if (win->is_snap && GAP == 0) {
+		xcb_shape_mask(conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING, win->parent, 0, 0, XCB_NONE);
+	}*/
 }
 
 static xcb_get_geometry_reply_t *w_get_geometry(xcb_window_t win) {
@@ -397,15 +406,32 @@ static void grab_keys() {
 	}
 }
 
+static void unfocus(window *win) {
+	uint32_t val = UNFOCUSCOL;
+	xcb_change_window_attributes(conn, win->parent, XCB_CW_BACK_PIXEL, &val);
+	
+	xcb_flush(conn);
+	
+	xcb_clear_area(conn, 0, win->parent, 0, 0, win->geom[GEOM_W], win->geom[GEOM_H]);
+}
+
 static void focus(window *subj) {
 	if (fwin[curws]) {
-		color(fwin[curws], uc);
+		unfocus(fwin[curws]);
 	}
 	
+	uint32_t mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL;
+	uint32_t vals[2];
+	vals[0] = FOCUSCOL;
+	vals[1] = FOCUSCOL;
+	xcb_change_window_attributes(conn, subj->parent, mask, vals);
+
+	xcb_flush(conn);
+
+	xcb_clear_area(conn, 0, subj->parent, 0, 0, subj->geom[GEOM_W], subj->geom[GEOM_H]);
+
 	xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, subj->child, XCB_CURRENT_TIME);
 	fwin[curws] = subj;
-	
-	color(subj, fc);
 }
 
 static void stack_above(window *subj) {
@@ -579,9 +605,9 @@ static void snap_save_state(window *win) {
 }
 
 static void snap_restore_state(window *win) {
-	update_geometry(win, MOVE_RESIZE_MASK, win->before_snap);
-	
 	win->is_snap = 0;
+	
+	update_geometry(win, MOVE_RESIZE_MASK, win->before_snap);
 }
 
 #define SNAP_TEMPLATE(A, B, C, D, E) static void A(int arg) {                   \
@@ -730,6 +756,16 @@ static uint32_t place_helper(uint32_t ptr_pos, uint32_t win_sze, uint32_t scr_sz
 	}
 }
 
+static void frame_extents(xcb_window_t win) {
+	uint32_t vals[4];
+	vals[0] = 0;     //left
+	vals[1] = 0;     //right
+	vals[2] = TITLE; //top
+	vals[3] = 0;     //bot
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, ewmh->_NET_FRAME_EXTENTS,
+			XCB_ATOM_CARDINAL, 32, 4, &vals);
+}
+
 static void map_request(xcb_generic_event_t *ev) {
 	xcb_map_request_event_t *e = (xcb_map_request_event_t *)ev;
 	if (all_wtf(e->window, NULL)) {
@@ -759,6 +795,13 @@ static void map_request(xcb_generic_event_t *ev) {
 	win->is_snap = 0;
 	win->is_e_full = 0;
 	win->is_i_full = 0;
+	
+	uint32_t mask = XCB_CONFIG_WINDOW_BORDER_WIDTH;
+	uint32_t vals[4];
+	vals[0] = 0;
+	xcb_configure_window(conn, win->child, mask, vals);
+
+	frame_extents(win->child);
 
 	xcb_get_geometry_reply_t *init_geom = w_get_geometry(win->child);
 	xcb_query_pointer_reply_t *ptr = w_query_pointer();
@@ -769,11 +812,9 @@ static void map_request(xcb_generic_event_t *ev) {
 	free(ptr);
 	free(init_geom);
 
-	uint32_t mask = XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
-	uint32_t vals[4];
-	vals[0] = scr->white_pixel;
-	vals[1] = 1;
-	vals[2] = XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+	mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
+	vals[0] = 1;
+	vals[1] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
 			XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
 	xcb_create_window(conn, scr->root_depth, win->parent, scr->root, x, y, w, h, 0,
 			XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, mask, vals);
@@ -784,25 +825,26 @@ static void map_request(xcb_generic_event_t *ev) {
 	vals[3] = h;
 	update_geometry(win, MOVE_RESIZE_MASK, vals);
 
-	mask = XCB_CONFIG_WINDOW_BORDER_WIDTH;
-	vals[0] = 0;
-	xcb_configure_window(conn, win->child, mask, vals);
-
 	mask = XCB_CW_EVENT_MASK;
 	vals[0] = XCB_EVENT_MASK_PROPERTY_CHANGE;
 	xcb_change_window_attributes(conn, win->child, mask, vals);
 
 	normal_events(win);
 	
-	color(win, uc);
-	
 	xcb_reparent_window(conn, win->child, win->parent, 0, TITLE);
-	xcb_map_window(conn, win->parent);
 	xcb_map_window(conn, win->child);
+	xcb_map_window(conn, win->parent);
+
+	vals[0] = XCB_ICCCM_WM_STATE_NORMAL;
+	vals[1] = XCB_NONE;
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win->child,
+	wm_atoms[WM_STATE], wm_atoms[WM_STATE], 32, 2, vals);
 	
 	insert(curws, win);
 	if (!state) {
 		focus(win);
+	} else {
+		unfocus(win);
 	}
 }
 
@@ -833,7 +875,7 @@ static int move_resize_helper(xcb_window_t win, xcb_get_geometry_reply_t **geom)
 
 static void grab_pointer() {
 	uint32_t mask = XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION |
-			XCB_EVENT_MASK_POINTER_MOTION_HINT;
+			XCB_EVENT_MASK_POINTER_MOTION;
 	uint32_t mode = XCB_GRAB_MODE_ASYNC;
 	xcb_grab_pointer(conn, 0, scr->root, mask, mode, mode, scr->root, XCB_NONE,
 			XCB_CURRENT_TIME);
@@ -1133,7 +1175,7 @@ static void expose(xcb_generic_event_t *ev) {
 		return;
 	}
 
-	color_by_focus(win);
+	//do nothing for now
 }
 
 int main(void) {
@@ -1160,18 +1202,36 @@ int main(void) {
 	}
 	xcb_ewmh_init_atoms_replies(ewmh, xcb_ewmh_init_atoms(conn, ewmh), (void *)0);
 
-	const char *wm_atom_name[2]; 
-	wm_atom_name[0] = "wm_protocols";
-	wm_atom_name[1] = "wm_delete_window";
+	const char *wm_atom_name[3]; 
+	wm_atom_name[0] = "WM_PROTOCOLS";
+	wm_atom_name[1] = "WM_DELETE_WINDOW";
+	wm_atom_name[2] = "WM_STATE";
 	get_atoms(wm_atom_name, wm_atoms, WM_COUNT);
+
+	/*xcb_change_property(conn, XCB_PROP_MODE_REPLACE, scr->root, net_atoms[NET_SUPPORTED],
+			XCB_ATOM_ATOM, 32, NET_COUNT, wm_atoms);*/
 	
-	const char *net_atom_name[3];
+	/*const char *net_atom_name[3];
 	net_atom_name[0] = "_net_supported";
 	net_atom_name[1] = "_net_wm_state_fullscreen";
 	net_atom_name[2] = "_net_wm_state";
-	get_atoms(net_atom_name, net_atoms, NET_COUNT);
-	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, scr->root, net_atoms[NET_SUPPORTED],
-			XCB_ATOM_ATOM, 32, NET_COUNT, net_atoms);
+	get_atoms(net_atom_name, net_atoms, NET_COUNT);*/
+
+	xcb_atom_t supported_atoms[] = {
+		ewmh->_NET_SUPPORTED,
+		ewmh->_NET_WM_STATE,
+		ewmh->_NET_WM_STATE_FULLSCREEN,
+		ewmh->_NET_FRAME_EXTENTS,
+		wm_atoms[WM_PROTOCOLS],
+		wm_atoms[WM_DELETE_WINDOW],
+		wm_atoms[WM_STATE],
+	};
+
+	/*xcb_change_property(conn, XCB_PROP_MODE_APPEND, scr->root, ewmh->_NET_SUPPORTED,
+			XCB_ATOM_ATOM, 32, LEN(net_atoms), net_atoms);*/
+
+	xcb_ewmh_set_supported(ewmh, 0, LEN(supported_atoms), supported_atoms);
+	
 
 	mask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE;
 	for (int i = 0; i < LEN(grab_buttons); i++) {
