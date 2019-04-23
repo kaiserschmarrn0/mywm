@@ -34,16 +34,21 @@ typedef union {
 	uint32_t v;
 } rgba;
 
+enum { ALL, NORMAL, ABOVE, TYPE_COUNT };
+
 typedef struct window {
-	struct window *next;
-	struct window *prev;
+	struct window *next[NUM_WS][TYPE_COUNT];
+	struct window *prev[NUM_WS][TYPE_COUNT];
 
-	/*int ws;
-	struct window *ws_next;
-	struct window *ws_prev;*/
+	int normal;
+	/*struct window *normal_next[NUM_WS];
+	struct window *normal_prev[NUM_WS];*/
 
-	struct window *above_next;
-	struct window *above_prev;
+	int above;
+	/*struct window *above_next[NUM_WS];
+	struct window *above_prev[NUM_WS];*/
+
+	int sticky;
 
 	xcb_window_t child;
 	xcb_window_t parent;
@@ -63,6 +68,13 @@ typedef struct window {
 	int ignore_unmap;
 } window;
 
+typedef struct workspace {
+	window *lists[TYPE_COUNT];
+
+	/* focus window */
+	window *fwin;
+} workspace;
+
 static xcb_connection_t *conn;
 static xcb_ewmh_connection_t *ewmh;
 static xcb_screen_t *scr;
@@ -72,8 +84,7 @@ static xcb_atom_t net_atoms[NET_COUNT];
 
 static xcb_key_symbols_t *keysyms = NULL;
 
-static window *stack[NUM_WS] = { NULL };
-static window *fwin[NUM_WS] = { NULL };
+static workspace stack[NUM_WS] = { { NULL, NULL } };
 
 static unsigned int state = DEFAULT;
 
@@ -88,34 +99,134 @@ static xcb_gcontext_t uc;
 static xcb_gcontext_t mask_fg;
 static xcb_gcontext_t mask_bg;
 
-static void insert(int ws, window *subj) {
-	subj->next = stack[ws];
-	subj->prev = NULL;
-
-	if (stack[ws]) {
-		stack[ws]->prev = subj;
-	}
-
-	stack[ws] = subj;
+static void stack_above(window *subj) {
+	uint32_t mask = XCB_CONFIG_WINDOW_STACK_MODE;
+	uint32_t val  = XCB_STACK_MODE_ABOVE;
+	xcb_configure_window(conn, subj->parent, mask, &val);
 }
 
-static window *excise(int ws, window *subj) {
-	if (subj->next) {
-		subj->next->prev = subj->prev;
+static void print_stack(int ws, int mode) {
+	printf("workspace %x [%x]: ", ws, stack[ws].lists[mode]);
+	for (window *list = stack[ws].lists[mode]; list; list = list->next[ws][mode]) {
+		printf("win %x -> ", list->child);
+	}
+	printf("NULL\n");
+}
+
+static void print_all_stacks(int ws) {
+	for (int i = 0; i < TYPE_COUNT; i++) {
+		print_stack(ws, i);
+	}
+}
+
+static void safe_traverse(int ws, int mode, void (*func)(window *)) {
+	for (window *list = stack[ws].lists[mode]; list;) {
+		window *temp = list;
+		list = temp->next[ws][mode];
+		func(temp);
+	}
+}
+
+static void traverse(int ws, int mode, void (*func)(window *)) {
+	for (window *list = stack[ws].lists[mode]; list; list = list->next[ws][mode]) {
+		func(list);
+	}
+}
+
+static void insert_into_helper(int ws, int mode, window *win) {
+	printf("window %x added to ws %d\n", win->child, ws);
+
+	win->next[ws][mode] = stack[ws].lists[mode];
+	win->prev[ws][mode] = NULL;
+
+	if (stack[ws].lists[mode]) {
+		stack[ws].lists[mode]->prev[ws][mode] = win;
+	}
+
+	stack[ws].lists[mode] = win;
+}
+
+static void raise(window *subj);
+
+static void insert_into(int ws, window *win) {
+	stack_above(win);
+	
+	printf("attr:");
+
+	if (win->normal) {
+		printf(" normal");
+		insert_into_helper(ws, NORMAL, win);
+	}
+
+	if (win->above) {
+		printf(" above");
+		insert_into_helper(ws, ABOVE, win);
+	} else {
+		safe_traverse(ws, ABOVE, raise);
+	}
+
+	printf("\n");
+	
+	insert_into_helper(ws, ALL, win);
+	
+	print_all_stacks(ws);
+}
+
+static void *excise_from_helper(int ws, int mode, window *subj) {
+	if (subj->next[ws][mode]) {
+		subj->next[ws][mode]->prev[ws][mode] = subj->prev[ws][mode];
 	}
 	
-	if (subj->prev) {
-		subj->prev->next = subj->next;
+	if (subj->prev[ws][mode]) {
+		subj->prev[ws][mode]->next[ws][mode] = subj->next[ws][mode];
 	} else {
-		stack[ws] = subj->next;
+		stack[ws].lists[mode] = subj->next[ws][mode];
 	}
-
-	return subj;
 }
 
-static window *ws_wtf(xcb_window_t id, int ws) {
+static void *excise_from(int ws, window *win) {
+	printf("window %x excised from ws %d\n", win->child, ws);
+
+	if (win->normal) {
+		excise_from_helper(ws, NORMAL, win);
+	}
+
+	if (win->above) {
+		excise_from_helper(ws, ABOVE, win);
+	}
+	
+	excise_from_helper(ws, ALL, win);
+	
+	print_all_stacks(ws);
+}
+
+static void insert_into_all_but(int ws, window *win) {
+	int i;
+	for (i = 0; i < ws; i++) {
+		insert_into(i, win);
+	}
+
+	for (i++; i < NUM_WS; i++) {
+		insert_into(i, win);
+	}
+}
+
+static void excise_from_all_but(int ws, window *win) {
+	int i;
+	for (i = 0; i < ws; i++) {
+		excise_from(i, win);
+	}
+
+	for (i++; i < NUM_WS; i++) {
+		excise_from(i, win);
+	}
+}
+
+//TODO: searches using indexed child/parent array for mode
+
+static window *ws_wtf(int ws, int mode, xcb_window_t id) {
 	window *cur;
-	for (cur = stack[ws]; cur; cur = cur->next) {
+	for (cur = stack[ws].lists[mode]; cur; cur = cur->next[ws][mode]) {
 		if (cur->child == id) {
 			break;
 		}
@@ -123,10 +234,10 @@ static window *ws_wtf(xcb_window_t id, int ws) {
 	return cur;
 }
 
-static window *all_wtf(xcb_window_t id, int *ws) {
+static window *all_wtf(int *ws, int mode, xcb_window_t id) {
 	window *ret;
 	for (int i = 0; i < NUM_WS; i++) {
-		ret = ws_wtf(id, i);
+		ret = ws_wtf(i, mode, id);
 		if (ret) {
 			if (ws) {
 				*ws = i;
@@ -137,9 +248,33 @@ static window *all_wtf(xcb_window_t id, int *ws) {
 	return ret;
 }
 
-static window *ws_ptf(xcb_window_t id, int ws) {
+static window *ws_ptf(int ws, int mode, xcb_window_t id) {
 	window *cur;
-	for (cur = stack[ws]; cur; cur = cur->next) {
+	for (cur = stack[ws].lists[mode]; cur; cur = cur->next[ws][mode]) {
+		if (cur->parent == id) {
+			break;
+		}
+	}
+	return cur;
+}
+
+static window *all_ptf(int *ws, int mode, xcb_window_t id) {
+	window *ret;
+	for (int i = 0; i < NUM_WS; i++) {
+		ret = ws_ptf(i, mode, id);
+		if (ret) {
+			if (ws) {
+				*ws = i;
+			}
+			break;
+		}
+	}
+	return ret;
+}
+
+/*static window *ws_ptf(xcb_window_t id, int ws) {
+	window *cur;
+	for (cur = stack[ws].top; cur; cur = cur->next[ws]) {
 		if (cur->parent == id) {
 			break;
 		}
@@ -159,14 +294,42 @@ static window *all_ptf(xcb_window_t id, int *ws) {
 		}
 	}
 	return ret;
+}*/
+
+/*static window *ws_managed(xcb_window_t id, int ws, window *(*func)(xcb_window_t, int)) {
+	window *ret = func(id, ws);
+
+	if (!ret || !ret->managed) {
+		return NULL;
+	}
+
+	return ret;
 }
 
+static window *all_managed(xcb_window_t id, int *ws, window *(*func)(xcb_window_t, int *)) {
+	window *ret = func(id, ws);
+
+	if (!ret || !ret->managed) {
+		return NULL;
+	}
+
+	return ret;
+}*/
+
 static void ignore_unmap(window *subj) {
+	if (subj->sticky || !subj->normal) {
+		return;
+	}
+
 	xcb_unmap_window(conn, subj->parent);
 	subj->ignore_unmap = 1;
 }
 
 static void map(window *subj) {
+	if (subj->sticky || !subj->normal) {
+		return;
+	}
+
 	xcb_map_window(conn, subj->parent);
 }
 
@@ -228,14 +391,6 @@ static void color(window *win, xcb_gcontext_t gc) {
 	rect.height = TITLE;
 
 	xcb_poly_fill_rectangle(conn, win->parent, gc, 1, &rect);
-}
-
-static void color_by_focus(window *win) {
-	if (win == fwin[curws]) {
-		color(win, fc);
-	} else {
-		color(win, uc);
-	}
 }
 
 static xcb_rectangle_t rect_mask[2 * RAD];
@@ -371,14 +526,6 @@ static xcb_query_pointer_reply_t *w_query_pointer() {
 	return xcb_query_pointer_reply(conn, cookie, NULL);
 }
 
-static void traverse(window *list, void (*func)(window *)) {
-	for (; list;) {
-		window *temp = list;
-		list = temp->next;
-		func(temp);
-	}
-}
-
 static void get_atoms(const char **names, xcb_atom_t *atoms, unsigned int count) {
 	xcb_intern_atom_cookie_t cookies[count];
 	for (int i = 0; i < count; i++) {
@@ -416,8 +563,8 @@ static void unfocus(window *win) {
 }
 
 static void focus(window *subj) {
-	if (fwin[curws]) {
-		unfocus(fwin[curws]);
+	if (stack[curws].fwin) {
+		unfocus(stack[curws].fwin);
 	}
 	
 	uint32_t mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL;
@@ -431,23 +578,18 @@ static void focus(window *subj) {
 	xcb_clear_area(conn, 0, subj->parent, 0, 0, subj->geom[GEOM_W], subj->geom[GEOM_H]);
 
 	xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, subj->child, XCB_CURRENT_TIME);
-	fwin[curws] = subj;
-}
-
-static void stack_above(window *subj) {
-	uint32_t mask = XCB_CONFIG_WINDOW_STACK_MODE;
-	uint32_t val  = XCB_STACK_MODE_ABOVE;
-	xcb_configure_window(conn, subj->parent, mask, &val);
+	stack[curws].fwin = subj;
 }
 
 static void raise(window *subj) {
-	if (subj == stack[curws]) {
+	printf("raising %d\n", subj->child);
+	/*if (subj == stack[curws].lists[ALL]) {
+		printf("raise aborted\n");
 		return;
-	}
+	}*/
 
-	insert(curws, excise(curws, subj));
-
-	stack_above(subj);
+	excise_from(curws, subj);
+	insert_into(curws, subj);
 }
 
 static void center_pointer(window *subj) {
@@ -464,24 +606,48 @@ static void button_release(xcb_generic_event_t *ev) {
 }
 
 static void forget_client(window *subj, int ws) {
+	printf("forgetting client: %d\n", subj->parent);
+
 	xcb_reparent_window(conn, subj->child, scr->root, 0, 0);
 	xcb_destroy_window(conn, subj->parent);
 
-	if ((state == MOVE || state == RESIZE) && subj == fwin[curws]) {
+	if ((state == MOVE || state == RESIZE) && subj == stack[curws].fwin) {
 		button_release(NULL);
 	}
 
-	free(excise(ws, subj));
+	if (subj->sticky) {
+		excise_from_all_but(ws, subj);
+	}
+
+	excise_from(ws, subj);
+	free(subj);
 	
-	if (ws != curws || fwin[curws] != subj) {
+	if (ws != curws || stack[curws].fwin != subj) {
 		return;
 	}
 		
-	fwin[curws] = NULL;
+	stack[curws].fwin = NULL;
 
-	if (stack[curws]) {
-		focus(stack[curws]);
+	if (stack[curws].lists[NORMAL]) {
+		focus(stack[curws].lists[NORMAL]);
 		return;
+	}
+}
+
+static void stick_helper(window *win) {
+	if (win->sticky) {
+		win->sticky = 0;
+		excise_from_all_but(curws, win);
+		return;
+	}
+
+	win->sticky = 1;
+	insert_into_all_but(curws, win);
+}
+
+static void stick(int arg) {
+	if (stack[curws].fwin) {
+		stick_helper(stack[curws].fwin);
 	}
 }
 
@@ -519,15 +685,21 @@ static void kill(xcb_window_t win) {
 }
 
 static void close(int arg) {
-	if (fwin[curws]) {
-		kill(fwin[curws]->child);
-		forget_client(fwin[curws], curws);
+	if (!stack[curws].fwin) {
+		return;
 	}
+
+	xcb_unmap_window(conn, stack[curws].fwin->parent);
+	xcb_unmap_window(conn, stack[curws].fwin->child);
+
+	kill(stack[curws].fwin->child);
+	printf("kill %d\n", stack[curws].fwin->child);
+	forget_client(stack[curws].fwin, curws);
 }
 
 static void cycle_raise(window *cur) {
-	for (; cur != fwin[curws];) {
-		window *temp = cur->prev;
+	for (; cur != stack[curws].fwin;) {
+		window *temp = cur->prev[curws][NORMAL];
 		raise(cur); 
 		cur = temp;
 	}
@@ -535,29 +707,29 @@ static void cycle_raise(window *cur) {
 
 static void stop_cycle() {
 	state = DEFAULT;
-	traverse(stack[curws], normal_events); 
+	traverse(curws, NORMAL, normal_events); 
 }
 
 static void cycle(int arg) {
-	if (!stack[curws] || !stack[curws]->next) {
+	if (!stack[curws].lists[NORMAL] || !stack[curws].lists[NORMAL]->next[curws][NORMAL]) {
 		return;
 	}
 
 	if (state != CYCLE) {
-		traverse(stack[curws], release_events);
-		marker = fwin[curws];
+		traverse(curws, NORMAL, release_events);
+		marker = stack[curws].fwin;
 		state = CYCLE;
 	}
 
-	if (marker->next) {
+	if (marker->next[curws]) {
 		cycle_raise(marker);
-		marker = fwin[curws];
-		center_pointer(marker->next);
-		raise(marker->next);
+		marker = stack[curws].fwin;
+		center_pointer(marker->next[curws][NORMAL]);
+		raise(marker->next[curws][NORMAL]);
 	} else {
 		cycle_raise(marker);
-		center_pointer(stack[curws]);
-		marker = fwin[curws];
+		center_pointer(stack[curws].lists[NORMAL]);
+		marker = stack[curws].fwin;
 	}
 }
 
@@ -565,31 +737,34 @@ static void change_ws(int arg) {
 	if (arg == curws) {
 		return;
 	}
+
+	if (stack[curws].fwin) {
+		unfocus(stack[curws].fwin);
+	}
 	
-	traverse(stack[arg], map);
-	traverse(stack[curws], ignore_unmap); 
+	traverse(arg, NORMAL, map);
+	traverse(curws, NORMAL, ignore_unmap); 
 	
 	curws = arg;
 
-	if (fwin[arg]) {
-		focus(fwin[arg]);
-	} else if (stack[arg]) {
-		focus(stack[arg]);
+	if (stack[arg].fwin) {
+		focus(stack[arg].fwin);
+	} else if (stack[arg].lists[NORMAL]) {
+		focus(stack[arg].lists[NORMAL]);
 	}
 }
 
 static void send_ws(int arg) {
-	if (!fwin[curws] || arg == curws) {
+	if (!stack[curws].fwin || arg == curws || stack[curws].fwin->sticky) {
 		return;
 	}
 
-	stack_above(fwin[curws]);
-	
-	fwin[curws]->ignore_unmap = 1;
-	xcb_unmap_window(conn, fwin[curws]->parent);
-	
-	insert(arg, excise(curws, fwin[curws]));
-	fwin[curws] = NULL;
+	stack[curws].fwin->ignore_unmap = 1;
+	xcb_unmap_window(conn, stack[curws].fwin->parent);
+
+	excise_from(curws, stack[curws].fwin);
+	insert_into(arg, stack[curws].fwin);
+	stack[curws].fwin = NULL;
 }
 
 static void save_state(window *win, uint32_t *state) {
@@ -610,28 +785,28 @@ static void snap_restore_state(window *win) {
 	update_geometry(win, MOVE_RESIZE_MASK, win->before_snap);
 }
 
-#define SNAP_TEMPLATE(A, B, C, D, E) static void A(int arg) {                   \
-	if (!fwin[curws] || fwin[curws]->is_e_full || fwin[curws]->is_i_full) { \
-		return;                                                         \
-	}                                                                       \
-	                                                                        \
-	if (!fwin[curws]->is_snap) {                                            \
-		snap_save_state(fwin[curws]);                                   \
-	}                                                                       \
-	                                                                        \
-	uint32_t vals[4];                                                       \
-	vals[0] = B;                                                            \
-	vals[1] = C;                                                            \
-	vals[2] = D;                                                            \
-	vals[3] = E;                                                            \
-	update_geometry(fwin[curws], MOVE_RESIZE_MASK, vals);                   \
-	                                                                        \
-	if (state == MOVE) {                                                    \
-		return;                                                         \
-	}                                                                       \
-	                                                                        \
-	center_pointer(fwin[curws]);                                            \
-	raise(fwin[curws]);                                                     \
+#define SNAP_TEMPLATE(A, B, C, D, E) static void A(int arg) {                                     \
+	if (!stack[curws].fwin || stack[curws].fwin->is_e_full || stack[curws].fwin->is_i_full) { \
+		return;                                                                           \
+	}                                                                                         \
+	                                                                                          \
+	if (!stack[curws].fwin->is_snap) {                                                        \
+		snap_save_state(stack[curws].fwin);                                               \
+	}                                                                                         \
+	                                                                                          \
+	uint32_t vals[4];                                                                         \
+	vals[0] = B;                                                                              \
+	vals[1] = C;                                                                              \
+	vals[2] = D;                                                                              \
+	vals[3] = E;                                                                              \
+	update_geometry(stack[curws].fwin, MOVE_RESIZE_MASK, vals);                               \
+	                                                                                          \
+	if (state == MOVE) {                                                                      \
+		return;                                                                           \
+	}                                                                                         \
+	                                                                                          \
+	center_pointer(stack[curws].fwin);                                                        \
+	raise(stack[curws].fwin);                                                                 \
 }
 
 #ifndef SNAP_MAX_SMART
@@ -704,24 +879,24 @@ static void full(window *win) {
 }
 
 static void int_full(int arg) {
-	if (!fwin[curws]) {
+	if (!stack[curws].fwin) {
 		return;
 	}
 
-	fwin[curws]->is_i_full = !fwin[curws]->is_i_full;
+	stack[curws].fwin->is_i_full = !stack[curws].fwin->is_i_full;
 
-	if (fwin[curws]->is_e_full) {
+	if (stack[curws].fwin->is_e_full) {
 		return;
 	}
 
-	if (!fwin[curws]->is_i_full) {
-		full_restore_state(fwin[curws]); 
+	if (!stack[curws].fwin->is_i_full) {
+		full_restore_state(stack[curws].fwin); 
 		return;
 	}
 	
-	full_save_state(fwin[curws]);
+	full_save_state(stack[curws].fwin);
 
-	full(fwin[curws]);
+	full(stack[curws].fwin);
 }
 
 static void ext_full(window *subj) {
@@ -739,7 +914,7 @@ static void ext_full(window *subj) {
 		full_save_state(subj);
 	}
 
-	full(fwin[curws]);	
+	full(stack[curws].fwin);	
 }
 
 static uint32_t size_helper(uint32_t win_sze, uint32_t scr_sze) {
@@ -768,10 +943,25 @@ static void frame_extents(xcb_window_t win) {
 
 static void map_request(xcb_generic_event_t *ev) {
 	xcb_map_request_event_t *e = (xcb_map_request_event_t *)ev;
-	if (all_wtf(e->window, NULL)) {
+	if (all_wtf(NULL, ALL, e->window)) {
 		return;
 	}
 	
+	window *win = malloc(sizeof(window));
+	win->parent = e->window; //idk if this is so good
+	win->child = e->window;
+	win->ignore_unmap = 0;
+	win->is_roll = 0;
+	win->is_snap = 0;
+	win->is_e_full = 0;
+	win->is_i_full = 0;
+	win->sticky = 0;
+	win->above = 0;
+	win->normal = 1;
+
+	uint32_t vals[4];
+	uint32_t mask;
+
 	xcb_get_property_cookie_t cookie = xcb_ewmh_get_wm_window_type(ewmh, e->window);
 	xcb_ewmh_get_atoms_reply_t type;
 	if (xcb_ewmh_get_wm_window_type_reply(ewmh, cookie, &type, NULL)) {
@@ -779,96 +969,109 @@ static void map_request(xcb_generic_event_t *ev) {
 			if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK 
 					|| type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR
 					|| type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
-				xcb_ewmh_get_atoms_reply_wipe(&type);
+				win->normal = 0;
+
+				mask = XCB_CW_EVENT_MASK;
+				vals[0] = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
+				xcb_configure_window(conn, win->parent, mask, vals);
+				
 				xcb_map_window(conn, e->window);
-				return;
 			}
 		}
 		xcb_ewmh_get_atoms_reply_wipe(&type);
 	}
 
-	window *win = malloc(sizeof(window));
-	win->parent = xcb_generate_id(conn);
-	win->child = e->window;
-	win->ignore_unmap = 0;
-	win->is_roll = 0;
-	win->is_snap = 0;
-	win->is_e_full = 0;
-	win->is_i_full = 0;
+	cookie = xcb_ewmh_get_wm_state(ewmh, e->window);
+	if (xcb_ewmh_get_wm_state_reply(ewmh, cookie, &type, NULL)) {
+		for (unsigned int i = 0; i < type.atoms_len; i++) {		
+			if (type.atoms[i] == ewmh->_NET_WM_STATE_STICKY) {
+				stick_helper(win);
+			}
+			if (type.atoms[i] == ewmh->_NET_WM_STATE_ABOVE) {
+				win->above = 1;
+			}
+		}
+		xcb_ewmh_get_atoms_reply_wipe(&type);
+	}
 	
-	uint32_t mask = XCB_CONFIG_WINDOW_BORDER_WIDTH;
-	uint32_t vals[4];
-	vals[0] = 0;
-	xcb_configure_window(conn, win->child, mask, vals);
-
-	frame_extents(win->child);
-
-	xcb_get_geometry_reply_t *init_geom = w_get_geometry(win->child);
-	xcb_query_pointer_reply_t *ptr = w_query_pointer();
-	uint32_t w = size_helper(init_geom->width, scr->width_in_pixels);
-	uint32_t h = size_helper(init_geom->height + TITLE, scr->height_in_pixels);
-	uint32_t x = place_helper(ptr->root_x, w, scr->width_in_pixels);
-	uint32_t y = place_helper(ptr->root_y, h, scr->height_in_pixels);
-	free(ptr);
-	free(init_geom);
-
-	mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
-	vals[0] = 1;
-	vals[1] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-			XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
-	xcb_create_window(conn, scr->root_depth, win->parent, scr->root, x, y, w, h, 0,
-			XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, mask, vals);
-
-	vals[0] = x;
-	vals[1] = y;
-	vals[2] = w;
-	vals[3] = h;
-	update_geometry(win, MOVE_RESIZE_MASK, vals);
-
-	mask = XCB_CW_EVENT_MASK;
-	vals[0] = XCB_EVENT_MASK_PROPERTY_CHANGE;
-	xcb_change_window_attributes(conn, win->child, mask, vals);
-
-	normal_events(win);
+	if (win->normal) {
+		win->parent = xcb_generate_id(conn);
 	
-	xcb_reparent_window(conn, win->child, win->parent, 0, TITLE);
-	xcb_map_window(conn, win->child);
+		mask = XCB_CONFIG_WINDOW_BORDER_WIDTH;
+		vals[0] = 0;
+		xcb_configure_window(conn, win->child, mask, vals);
+	
+		frame_extents(win->child);
+	
+		xcb_get_geometry_reply_t *init_geom = w_get_geometry(win->child);
+		xcb_query_pointer_reply_t *ptr = w_query_pointer();
+		uint32_t w = size_helper(init_geom->width, scr->width_in_pixels);
+		uint32_t h = size_helper(init_geom->height + TITLE, scr->height_in_pixels);
+		uint32_t x = place_helper(ptr->root_x, w, scr->width_in_pixels);
+		uint32_t y = place_helper(ptr->root_y, h, scr->height_in_pixels);
+		free(ptr);
+		free(init_geom);
+	
+		mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
+		vals[0] = 1;
+		vals[1] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+				XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+		xcb_create_window(conn, scr->root_depth, win->parent, scr->root, x, y, w, h, 0,
+				XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, mask, vals);
+	
+		vals[0] = x;
+		vals[1] = y;
+		vals[2] = w;
+		vals[3] = h;
+		update_geometry(win, MOVE_RESIZE_MASK, vals);
+	
+		mask = XCB_CW_EVENT_MASK;
+		vals[0] = XCB_EVENT_MASK_PROPERTY_CHANGE;
+		xcb_change_window_attributes(conn, win->child, mask, vals);
+	
+		normal_events(win);
+		
+		xcb_reparent_window(conn, win->child, win->parent, 0, TITLE);
+		xcb_map_window(conn, win->child);
+
+		if (!state) {
+			focus(win);
+		} else {
+			unfocus(win);
+		}
+	}
+	
+	insert_into(curws, win);
+
 	xcb_map_window(conn, win->parent);
 
 	vals[0] = XCB_ICCCM_WM_STATE_NORMAL;
 	vals[1] = XCB_NONE;
 	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win->child,
 	wm_atoms[WM_STATE], wm_atoms[WM_STATE], 32, 2, vals);
-	
-	insert(curws, win);
-	if (!state) {
-		focus(win);
-	} else {
-		unfocus(win);
-	}
 }
 
 static void enter_notify(xcb_generic_event_t *ev) {
 	xcb_enter_notify_event_t *e = (xcb_enter_notify_event_t *)ev;
-	window *found = ws_ptf(e->event, curws);
-	if (found) {
+	window *found = ws_ptf(curws, NORMAL, e->event);
+	if (found && found->normal) {
 		focus(found);
 	}
 }
 
 static int move_resize_helper(xcb_window_t win, xcb_get_geometry_reply_t **geom) {
-	window *found = ws_ptf(win, curws);
-	if (!found || found != fwin[curws]) {
+	window *found = ws_ptf(curws, NORMAL, win);
+	if (!found || !found->normal || found != stack[curws].fwin) {
 		return 0;
 	}
 
-	raise(fwin[curws]);
+	raise(stack[curws].fwin);
 	
-	if (fwin[curws]->is_e_full || fwin[curws]->is_i_full) {
+	if (stack[curws].fwin->is_e_full || stack[curws].fwin->is_i_full) {
 		return 0;
 	}
 
-	*geom = w_get_geometry(fwin[curws]->parent);
+	*geom = w_get_geometry(stack[curws].fwin->parent);
 
 	return 1;
 }
@@ -888,9 +1091,9 @@ static void mouse_move(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
 		return;
 	}
 
-	if (fwin[curws]->is_snap) {
-		x = fwin[curws]->before_snap[2] * (event_x - geom->x) / geom->width;
-		y = fwin[curws]->before_snap[3] * (event_y - geom->y) / geom->height; 
+	if (stack[curws].fwin->is_snap) {
+		x = stack[curws].fwin->before_snap[2] * (event_x - geom->x) / geom->width;
+		y = stack[curws].fwin->before_snap[3] * (event_y - geom->y) / geom->height; 
 	} else {
 		x = event_x - geom->x;
 		y = event_y - geom->y;
@@ -910,7 +1113,7 @@ static void mouse_resize(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
 		return;
 	}
 
-	fwin[curws]->is_snap = 0;
+	stack[curws].fwin->is_snap = 0;
 	x = geom->width - event_x;
 	y = geom->height - event_y;
 
@@ -922,8 +1125,8 @@ static void mouse_resize(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
 }
 
 static void mouse_roll_up(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
-	window *found = ws_ptf(win, curws);
-	if (!found || found != fwin[curws] || found->is_roll) {
+	window *found = ws_ptf(curws, NORMAL, win);
+	if (!found || !found->normal || found != stack[curws].fwin || found->is_roll) {
 		return;
 	}
 	
@@ -936,8 +1139,8 @@ static void mouse_roll_up(xcb_window_t win, uint32_t event_x, uint32_t event_y) 
 }
 
 static void mouse_roll_down(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
-	window *found = ws_ptf(win, curws);
-	if (!found || found != fwin[curws] || !found->is_roll) {
+	window *found = ws_ptf(curws, NORMAL, win);
+	if (!found || !found->normal || found != stack[curws].fwin || !found->is_roll) {
 		return;
 	}
 
@@ -993,23 +1196,20 @@ static void motion_notify(xcb_generic_event_t *ev) {
 		} else if (p->root_y > scr->height_in_pixels - SNAP_MARGIN) {
 			mouse_snap(p->root_x, scr->width_in_pixels, snap_ld, snap_rd, snap_max);
 		} else {
-			if (fwin[curws]->is_snap) {
-				snap_restore_state(fwin[curws]);
+			if (stack[curws].fwin->is_snap) {
+				snap_restore_state(stack[curws].fwin);
 			}
 
 			uint32_t vals[2];
 			vals[0] = p->root_x - x;
 			vals[1] = p->root_y - y;
-			update_geometry(fwin[curws], MOVE_MASK, vals);
+			update_geometry(stack[curws].fwin, MOVE_MASK, vals);
 		}
 	} else if (state == RESIZE) {
-		if (fwin[curws]->is_roll) {
-			mouse_roll_down(fwin[curws]->parent, 0, 0);
-		}
 		uint32_t vals[2];
 		vals[0] = p->root_x + x;
 		vals[1] = p->root_y + y;
-		update_geometry(fwin[curws], RESIZE_MASK, vals);
+		update_geometry(stack[curws].fwin, RESIZE_MASK, vals);
 	}
 
 	free(p);
@@ -1043,12 +1243,15 @@ static void key_release(xcb_generic_event_t *ev) {
 static void unmap_notify(xcb_generic_event_t *ev) {
 	xcb_unmap_notify_event_t *e = (xcb_unmap_notify_event_t *)ev;
 
-	window *found = ws_wtf(e->window, curws);
+	window *found = ws_wtf(curws, ALL, e->window);
 	if (!found) {
 		return;
 	}
+	
+	printf("unmap %d\n", found->child);
 
 	if (found->ignore_unmap) {
+		printf("unmap ignored\n");
 		found->ignore_unmap = 0;
 		return;
 	}
@@ -1060,8 +1263,10 @@ static void destroy_notify(xcb_generic_event_t *ev) {
 	xcb_destroy_notify_event_t *e = (xcb_destroy_notify_event_t *)ev;
 
 	int ws;
-	window *found = all_wtf(e->window, &ws);
+	window *found = all_wtf(&ws, ALL, e->window);
+	
 	if (found) {
+		printf("destroy %d on ws %d\n", found->child, ws);
 		forget_client(found, ws);
 	}
 }
@@ -1069,9 +1274,9 @@ static void destroy_notify(xcb_generic_event_t *ev) {
 static void client_message(xcb_generic_event_t *ev) {
 	xcb_client_message_event_t *e = (xcb_client_message_event_t *)ev;
 
-	window *found = all_wtf(e->window, NULL);
+	window *found = all_wtf(NULL, ALL, e->window);
 
-	if (!found || e->type != ewmh->_NET_WM_STATE) {
+	if (!found || !found->normal || e->type != ewmh->_NET_WM_STATE) {
 		return;
 	}	
 
@@ -1122,11 +1327,11 @@ static int mask_to_geo(xcb_configure_request_event_t *e, uint32_t *vals) {
 
 static void configure_request(xcb_generic_event_t *ev) {
 	xcb_configure_request_event_t *e = (xcb_configure_request_event_t *)ev;
-	window *found = all_wtf(e->window, NULL);
+	window *found = all_wtf(NULL, ALL, e->window);
 	
 	uint32_t vals[6];
 
-	if (!found) {
+	if (!found || !found->normal) {
 		int i = mask_to_geo(e, vals);
 
 		check_mask(vals, i, e->sibling, e->value_mask, XCB_CONFIG_WINDOW_SIBLING)
@@ -1155,7 +1360,7 @@ static void cleanup(window *win) {
 
 static void die() {
 	for (int i = 0; i < NUM_WS; i++) {
-		traverse(stack[i], cleanup);
+		safe_traverse(i, ALL, cleanup);
 	}
 
 	xcb_ungrab_key(conn, XCB_GRAB_ANY, scr->root, XCB_MOD_MASK_ANY);
@@ -1170,8 +1375,8 @@ static void die() {
 static void expose(xcb_generic_event_t *ev) {
 	xcb_expose_event_t *e = (xcb_expose_event_t *)ev;
 
-	window *win = ws_ptf(e->window, curws);
-	if (!win) {
+	window *win = ws_ptf(curws, ALL, e->window);
+	if (!win || !win->normal) {
 		return;
 	}
 
@@ -1208,31 +1413,22 @@ int main(void) {
 	wm_atom_name[2] = "WM_STATE";
 	get_atoms(wm_atom_name, wm_atoms, WM_COUNT);
 
-	/*xcb_change_property(conn, XCB_PROP_MODE_REPLACE, scr->root, net_atoms[NET_SUPPORTED],
-			XCB_ATOM_ATOM, 32, NET_COUNT, wm_atoms);*/
-	
-	/*const char *net_atom_name[3];
-	net_atom_name[0] = "_net_supported";
-	net_atom_name[1] = "_net_wm_state_fullscreen";
-	net_atom_name[2] = "_net_wm_state";
-	get_atoms(net_atom_name, net_atoms, NET_COUNT);*/
-
 	xcb_atom_t supported_atoms[] = {
 		ewmh->_NET_SUPPORTED,
 		ewmh->_NET_WM_STATE,
 		ewmh->_NET_WM_STATE_FULLSCREEN,
+		ewmh->_NET_WM_STATE_STICKY,
+		ewmh->_NET_WM_STATE_ABOVE,
+		ewmh->_NET_WM_WINDOW_TYPE,
+		ewmh->_NET_WM_WINDOW_TYPE_DOCK,
 		ewmh->_NET_FRAME_EXTENTS,
 		wm_atoms[WM_PROTOCOLS],
 		wm_atoms[WM_DELETE_WINDOW],
 		wm_atoms[WM_STATE],
 	};
 
-	/*xcb_change_property(conn, XCB_PROP_MODE_APPEND, scr->root, ewmh->_NET_SUPPORTED,
-			XCB_ATOM_ATOM, 32, LEN(net_atoms), net_atoms);*/
-
 	xcb_ewmh_set_supported(ewmh, 0, LEN(supported_atoms), supported_atoms);
 	
-
 	mask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE;
 	for (int i = 0; i < LEN(grab_buttons); i++) {
 		xcb_grab_button(conn, 0, scr->root, mask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC,
