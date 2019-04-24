@@ -1,6 +1,9 @@
-#include "araiwm.h"
+#ifndef CONFIG_H
+#define CONFIG_H
 
-/* attributes */
+#include <X11/keysym.h>
+
+#include "mywm.h"
 
 #define NUM_WS 4
 
@@ -17,8 +20,18 @@
 #define SNAP_MARGIN 5
 #define SNAP_CORNER 256
 
-//ignore gaps when maxed
 #define SNAP_MAX_SMART
+
+/* rounded corners */
+
+#define RAD 6
+
+#define DIA 2 * RAD
+
+#define GEOM_X 0
+#define GEOM_Y 1
+#define GEOM_W 2
+#define GEOM_H 3
 
 /* keyboard modifiers */
 
@@ -41,6 +54,7 @@ static const button parent_buttons[] = {
 
 static const keybind keys[] = {
 	{ MOD,         XK_q,     close,     0 },
+	{ MOD,         XK_s,     stick,     0 },
 	{ MOD,         XK_Tab,   cycle,     0 },
 	{ MOD,         XK_Left,  snap_l,    0 },
 	{ MOD,         XK_Right, snap_r,    0 },
@@ -55,3 +69,5 @@ static const keybind keys[] = {
 	{ MOD | SHIFT, XK_3,     send_ws,   2 },
 	{ MOD | SHIFT, XK_4,     send_ws,   3 },
 };
+
+#endif
