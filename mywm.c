@@ -104,10 +104,6 @@ static void update_geometry(window *win, uint32_t mask, uint32_t *vals) {
 		child_mask |= XCB_CONFIG_WINDOW_HEIGHT;
 		p++;
 	}
-	
-	if (child_mask) {
-		xcb_configure_window(conn, win->windows[WIN_CHILD], child_mask, vals + c);
-	}
 
 	xcb_configure_notify_event_t ev;
 	ev.response_type = XCB_CONFIGURE_NOTIFY;
@@ -124,11 +120,15 @@ static void update_geometry(window *win, uint32_t mask, uint32_t *vals) {
 
 	xcb_send_event(conn, 0, win->windows[WIN_CHILD], XCB_EVENT_MASK_NO_EVENT, (char *)&ev);
 
-	/*if (p > c && !win->is_snap) {
+	if (p > c) {
 		rounded_corners(win);	
 	} else if (win->is_snap && GAP == 0) {
 		xcb_shape_mask(conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING, win->windows[WIN_PARENT], 0, 0, XCB_NONE);
-	}*/
+	}
+
+	if (child_mask) {
+		xcb_configure_window(conn, win->windows[WIN_CHILD], child_mask, vals + c);
+	}
 }
 
 static xcb_get_geometry_reply_t *w_get_geometry(xcb_window_t win) {
@@ -326,7 +326,7 @@ void cycle(int arg) {
 		state = CYCLE;
 	}
 
-	if (marker->next[curws]) {
+	if (marker->next[curws][TYPE_NORMAL]) {
 		cycle_raise(marker);
 		marker = stack[curws].fwin;
 		center_pointer(marker->next[curws][TYPE_NORMAL]);
