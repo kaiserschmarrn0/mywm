@@ -13,8 +13,6 @@
 #include "workspace.h"
 #include "rounded.h"
 
-#include "interface.h"
-
 #define LEN(A) sizeof(A)/sizeof(*A)
 
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT, };
@@ -87,62 +85,7 @@ static void grab_keys() {
 	}
 }
 
-/* static */ void center_pointer(window *win) {
-	uint32_t x = win->geom[GEOM_W] / 2;
-	uint32_t y = win->geom[GEOM_H] / 2;
-	xcb_warp_pointer(conn, XCB_NONE, win->windows[WIN_CHILD], 0, 0, 0, 0, x, y);
-}
-
-void button_release(xcb_generic_event_t *ev) {
-	xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
-	state = DEFAULT;
-
-	events[XCB_MOTION_NOTIFY] = NULL; //jic
-	events[XCB_BUTTON_RELEASE] = NULL; //jic
-}
-
-void forget_client(window *subj, int ws) {
-	xcb_reparent_window(conn, subj->windows[WIN_CHILD], scr->root, 0, 0);
-	xcb_destroy_window(conn, subj->windows[WIN_PARENT]);
-
-	if ((state == MOVE || state == RESIZE) && subj == stack[curws].fwin) {
-		button_release(NULL);
-	}
-
-	if (subj->sticky) {
-		excise_from_all_but(ws, subj);
-	}
-
-	excise_from(ws, subj);
-	free(subj);
-	
-	if (ws != curws || stack[curws].fwin != subj) {
-		return;
-	}
-		
-	stack[ws].fwin = NULL;
-
-	refocus(ws);
-}
-
-static void stick_helper(window *win) {
-	if (win->sticky) {
-		win->sticky = 0;
-		excise_from_all_but(curws, win);
-		return;
-	}
-
-	win->sticky = 1;
-	insert_into_all_but(curws, win);
-}
-
-void stick(int arg) {
-	if (stack[curws].fwin) {
-		stick_helper(stack[curws].fwin);
-	}
-}
-
-/* static */ void kill(xcb_window_t win) {
+void kill(xcb_window_t win) {
 	xcb_icccm_get_wm_protocols_reply_t pro;
 	xcb_get_property_cookie_t cookie;
 	cookie = xcb_icccm_get_wm_protocols_unchecked(conn, win, ewmh->WM_PROTOCOLS);
@@ -175,53 +118,6 @@ void stick(int arg) {
 	xcb_send_event(conn, 0, win, mask, (char *)&ev);
 }
 
-
-
-/* static */ void save_state(window *win, uint32_t *state) {
-	for (int i = 0; i < 4; i++) {
-		state[i] = win->geom[i];
-	}
-}
-
-/* static */ void full_save_state(window *win) {
-	safe_raise(win);
-
-	save_state(win, win->before_full);
-}
-
-/* static */ void full_restore_state(window *win) {
-	update_geometry(win, MOVE_RESIZE_MASK, win->before_full);
-
-	safe_traverse(curws, TYPE_ABOVE, raise);
-}
-
-/* static */ void full(window *win) {
-	uint32_t vals[4];
-	vals[0] = 0;
-	vals[1] = - TITLE;
-	vals[2] = scr->width_in_pixels;
-	vals[3] = scr->height_in_pixels + TITLE;
-	update_geometry(win, MOVE_RESIZE_MASK, vals);
-}
-
-static void ext_full(window *subj) {
-	subj->is_e_full = !subj->is_e_full;
-
-	if (!subj->is_e_full) {
-		if (!subj->is_i_full) {
-			full_restore_state(subj);
-		}
-
-		return;
-	}
-		
-	if (!subj->is_i_full) {
-		full_save_state(subj);
-	}
-
-	full(stack[curws].fwin);	
-}
-
 static uint32_t size_helper(uint32_t win_sze, uint32_t scr_sze) {
 	return win_sze > scr_sze ? scr_sze : win_sze;
 }
@@ -234,16 +130,6 @@ static uint32_t place_helper(uint32_t ptr_pos, uint32_t win_sze, uint32_t scr_sz
 	} else {
 		return ptr_pos - win_sze / 2 - BORDER;
 	}
-}
-
-static void frame_extents(xcb_window_t win) { //unused aorn
-	uint32_t vals[4];
-	vals[0] = 0;     //left
-	vals[1] = 0;     //right
-	vals[2] = TITLE; //top
-	vals[3] = 0;     //bot
-	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, ewmh->_NET_FRAME_EXTENTS,
-			XCB_ATOM_CARDINAL, 32, 4, &vals);
 }
 
 static void map_request(xcb_generic_event_t *ev) {
@@ -607,7 +493,6 @@ int main(void) {
 	for (int i = 0; i < XCB_NO_OPERATION; i++) events[i] = NULL;
 
 	events[XCB_BUTTON_PRESS]      = button_press;
-	events[XCB_BUTTON_RELEASE]    = button_release;
 	events[XCB_CLIENT_MESSAGE]    = client_message;
 	events[XCB_CONFIGURE_REQUEST] = configure_request;
 	events[XCB_KEY_PRESS]         = key_press;

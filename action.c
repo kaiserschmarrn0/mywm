@@ -1,7 +1,6 @@
 #include "mywm.h"
 #include "workspace.h"
 #include "action.h"
-#include "interface.h"
 
 //used for mouse data
 static uint32_t x = 0;
@@ -9,6 +8,12 @@ static uint32_t y = 0;
 
 //used for cycling
 static window *marker = NULL;
+
+void stick(int arg) {
+	if (stack[curws].fwin) {
+		stick_helper(stack[curws].fwin);
+	}
+}
 
 void close(int arg) {
 	if (!stack[curws].fwin) {
@@ -31,7 +36,7 @@ static void cycle_raise(window *cur) {
 	}
 }
 
-/* static */ void stop_cycle() {
+void stop_cycle() {
 	state = DEFAULT;
 	traverse(curws, TYPE_NORMAL, normal_events); 
 }
@@ -303,6 +308,14 @@ void mouse_resize_motion(xcb_generic_event_t *ev) {
 	update_geometry(stack[curws].fwin, RESIZE_MASK, vals);
 	
 	free(p);
+}
+
+void button_release(xcb_generic_event_t *ev) {
+	xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
+	state = DEFAULT;
+
+	events[XCB_MOTION_NOTIFY] = NULL; //jic
+	events[XCB_BUTTON_RELEASE] = NULL; //jic
 }
 
 void mouse_roll_up(xcb_window_t win, uint32_t event_x, uint32_t event_y) {

@@ -66,6 +66,8 @@ void rounded_corners(window *win) {
 		win_rects[i].height = rect_mask[i].height;
 	}
 
-	xcb_shape_rectangles(conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING, XCB_CLIP_ORDERING_Y_SORTED, win->windows[WIN_PARENT], 0, 0, rect_count, win_rects);
+	xcb_shape_rectangles(conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING,
+			XCB_CLIP_ORDERING_Y_SORTED, win->windows[WIN_PARENT], 0, 0, rect_count,
+			win_rects);
 }
 

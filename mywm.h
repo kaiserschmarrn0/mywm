@@ -4,10 +4,6 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_ewmh.h>
 
-#define MOVE_MASK XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y
-#define RESIZE_MASK XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT
-#define MOVE_RESIZE_MASK MOVE_MASK | RESIZE_MASK
-
 enum { DEFAULT, MOVE, RESIZE, CYCLE, };
 
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_STATE, WM_COUNT, };
@@ -40,7 +36,8 @@ extern xcb_atom_t ewmh__NET_WM_STATE_FOCUSED;
 	
 extern void (*events[XCB_NO_OPERATION])(xcb_generic_event_t *event);
 
-xcb_query_pointer_reply_t *w_query_pointer(); //util
-/* static */ void stop_cycle(); //util
+//shared utilities
+xcb_query_pointer_reply_t *w_query_pointer();
+void kill(xcb_window_t win);
 
 #endif

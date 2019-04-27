@@ -8,6 +8,10 @@
 #define GEOM_W 2
 #define GEOM_H 3
 
+#define MOVE_MASK XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y
+#define RESIZE_MASK XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT
+#define MOVE_RESIZE_MASK MOVE_MASK | RESIZE_MASK
+
 enum { TYPE_ALL, TYPE_NORMAL, TYPE_ABOVE, TYPE_COUNT };
 enum { WIN_CHILD, WIN_PARENT, WIN_COUNT };
 
@@ -39,6 +43,8 @@ typedef struct window {
 void release_events(window *subj);
 void normal_events(window *subj);
 
+void center_pointer(window *win);
+
 void stack_above(window *subj);
 void raise(window *subj);
 void safe_raise(window *subj);
@@ -50,6 +56,17 @@ void show(window *win);
 void hide(window *win);
 
 void ewmh_state(window *win);
+
+void stick_helper(window *win);
+
+void save_state(window *win, uint32_t *state);
+
+void full_save_state(window *win);
+void full_restore_state(window *win);
+void full(window *win);
+void ext_full(window *win);
+
+void forget_client(window *subj, int ws);
 
 void update_geometry(window *win, uint32_t mask, uint32_t *vals);
 

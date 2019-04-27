@@ -24,6 +24,12 @@ void normal_events(window *subj) {
 	xcb_change_window_attributes(conn, subj->windows[WIN_PARENT], mask, &val); 
 }
 
+void center_pointer(window *win) {
+	uint32_t x = win->geom[GEOM_W] / 2;
+	uint32_t y = win->geom[GEOM_H] / 2;
+	xcb_warp_pointer(conn, XCB_NONE, win->windows[WIN_CHILD], 0, 0, 0, 0, x, y);
+}
+
 void stack_above(window *win) {
 	uint32_t mask = XCB_CONFIG_WINDOW_STACK_MODE;
 	uint32_t val  = XCB_STACK_MODE_ABOVE;
@@ -107,6 +113,16 @@ void hide(window *win) {
 	ewmh_state(win);
 }
 
+void frame_extents(xcb_window_t win) { //unused aorn
+	uint32_t vals[4];
+	vals[0] = 0;     //left
+	vals[1] = 0;     //right
+	vals[2] = TITLE; //top
+	vals[3] = 0;     //bot
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, ewmh->_NET_FRAME_EXTENTS,
+			XCB_ATOM_CARDINAL, 32, 4, &vals);
+}
+
 void ewmh_state(window *win) {
 	xcb_atom_t atoms[5];
 	int i = 0;
@@ -126,6 +142,88 @@ void ewmh_state(window *win) {
 	} else {
 		xcb_delete_property(conn, win->windows[WIN_CHILD], ewmh->_NET_WM_STATE);
 	}
+}
+
+void stick_helper(window *win) {
+	if (win->sticky) {
+		win->sticky = 0;
+		excise_from_all_but(curws, win);
+		return;
+	}
+
+	win->sticky = 1;
+	insert_into_all_but(curws, win);
+}
+
+void save_state(window *win, uint32_t *state) {
+	for (int i = 0; i < 4; i++) {
+		state[i] = win->geom[i];
+	}
+}
+
+void full_save_state(window *win) {
+	safe_raise(win);
+
+	save_state(win, win->before_full);
+}
+
+void full_restore_state(window *win) {
+	update_geometry(win, MOVE_RESIZE_MASK, win->before_full);
+
+	safe_traverse(curws, TYPE_ABOVE, raise);
+}
+
+void full(window *win) {
+	uint32_t vals[4];
+	vals[0] = 0;
+	vals[1] = - TITLE;
+	vals[2] = scr->width_in_pixels;
+	vals[3] = scr->height_in_pixels + TITLE;
+	update_geometry(win, MOVE_RESIZE_MASK, vals);
+
+	ewmh_state(win);
+}
+
+void ext_full(window *subj) {
+	subj->is_e_full = !subj->is_e_full;
+
+	if (!subj->is_e_full) {
+		if (!subj->is_i_full) {
+			full_restore_state(subj);
+		}
+
+		return;
+	}
+		
+	if (!subj->is_i_full) {
+		full_save_state(subj);
+	}
+
+	full(stack[curws].fwin);	
+}
+
+void forget_client(window *subj, int ws) {
+	xcb_reparent_window(conn, subj->windows[WIN_CHILD], scr->root, 0, 0);
+	xcb_destroy_window(conn, subj->windows[WIN_PARENT]);
+
+	if ((state == MOVE || state == RESIZE) && subj == stack[curws].fwin) {
+		button_release(NULL);
+	}
+
+	if (subj->sticky) {
+		excise_from_all_but(ws, subj);
+	}
+
+	excise_from(ws, subj);
+	free(subj);
+	
+	if (ws != curws || stack[curws].fwin != subj) {
+		return;
+	}
+		
+	stack[ws].fwin = NULL;
+
+	refocus(ws);
 }
 
 void update_geometry(window *win, uint32_t mask, uint32_t *vals) {

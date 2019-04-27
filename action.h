@@ -1,9 +1,10 @@
 #ifndef ACTION_H
 #define ACTION_H
 
+void stick(int arg);
 void close(int arg);
 void cycle(int arg);
-void stick(int arg);
+void stop_cycle();
 
 void snap_l(int arg);
 void snap_lu(int arg);
