@@ -4,11 +4,12 @@ mywm - my window manager
 ---------------------------------------------------------------------------------
 mywm is an experimental reparenting window manager
 
-i aim for a reparenting infrastructure simple enough to be intuitively extensible
+it aims for a reparenting infrastructure simple enough to be intuitively extensible
 
 requirements
 ---------------------------------------------------------------------------------
 xcb header files: icccm, shape, ewmh
+
 X11 header files: keysym
 
 installation
@@ -20,3 +21,5 @@ install using
 todo
 ---------------------------------------------------------------------------------
 better infrastructure for state altering actions
+
+util.c, util.h?
