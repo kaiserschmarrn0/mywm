@@ -3,6 +3,11 @@
 
 #include "config.h"
 
+#define GEOM_X 0
+#define GEOM_Y 1
+#define GEOM_W 2
+#define GEOM_H 3
+
 enum { TYPE_ALL, TYPE_NORMAL, TYPE_ABOVE, TYPE_COUNT };
 enum { WIN_CHILD, WIN_PARENT, WIN_COUNT };
 
@@ -31,7 +36,21 @@ typedef struct window {
 	int ignore_unmap;
 } window;
 
+void release_events(window *subj);
+void normal_events(window *subj);
+
 void stack_above(window *subj);
 void raise(window *subj);
+void safe_raise(window *subj);
+
+void focus(window *subj);
+void unfocus(window *win);
+
+void show(window *win);
+void hide(window *win);
+
+void ewmh_state(window *win);
+
+void update_geometry(window *win, uint32_t mask, uint32_t *vals);
 
 #endif

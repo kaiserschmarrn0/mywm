@@ -1,4 +1,5 @@
 #include "workspace.h"
+#include "window.h"
 
 workspace stack[NUM_WS] = { { { NULL }, NULL } };
 int curws = 0;
@@ -48,20 +49,14 @@ void insert_into(int ws, window *win) {
 	insert_into_helper(ws, TYPE_ALL, win);
 
 	if (win->normal) {
-		printf(" normal");
 		insert_into_helper(ws, TYPE_NORMAL, win);
 	}
 
 	if (win->above) {
-		printf(" above");
 		insert_into_helper(ws, TYPE_ABOVE, win);
-	} else {
+	} else if (!win->is_i_full && !win->is_e_full) {
 		safe_traverse(ws, TYPE_ABOVE, raise);
 	}
-
-	printf("\n");
-	
-	print_all_stacks(ws);
 }
 
 static void excise_from_helper(int ws, int type, window *subj) {
@@ -86,8 +81,6 @@ void excise_from(int ws, window *win) {
 	}
 	
 	excise_from_helper(ws, TYPE_ALL, win);
-	
-	print_all_stacks(ws);
 }
 
 static void all_but_helper(int ws, window *win, void (*func)(int, window *)) {
@@ -131,4 +124,28 @@ window *search_all(int *ws, int type, int window_index, xcb_window_t id) {
 		}
 	}
 	return ret;
+}
+
+void refocus(int ws) {
+	printf("\nrefocusing\n");
+	window *win;
+	if (stack[ws].fwin) {
+		win = stack[ws].fwin;
+		printf("got fwin\n");
+	} else if (stack[ws].lists[TYPE_NORMAL]) {
+		printf("got stack top\n");
+		win = stack[ws].lists[TYPE_NORMAL];	
+	} else {
+		printf("hmm... no fwin or stack\n");
+		return;
+	}
+
+	if (win->is_i_full || win->is_e_full) {
+		printf("raised\n");
+		raise(win);
+	}
+
+	if (win != stack[ws].fwin) {
+		focus(win);
+	}
 }

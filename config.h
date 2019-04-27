@@ -4,12 +4,13 @@
 #include <X11/keysym.h>
 
 #include "mywm.h"
+#include "action.h"
 
 #define NUM_WS 4
 
 #define TOP 0
 #define BOT 28
-#define GAP 0
+#define GAP 8
 #define BORDER 0
 
 #define TITLE 16
@@ -24,14 +25,10 @@
 
 /* rounded corners */
 
+//uncomment for rounded corners
+#define ROUNDED
+
 #define RAD 6
-
-#define DIA 2 * RAD
-
-#define GEOM_X 0
-#define GEOM_Y 1
-#define GEOM_W 2
-#define GEOM_H 3
 
 /* keyboard modifiers */
 
@@ -41,13 +38,13 @@
 /* mouse controls */
 
 static const button grab_buttons[] = {
-	{ MOD, XCB_BUTTON_INDEX_1, mouse_move   },
-	{ MOD, XCB_BUTTON_INDEX_3, mouse_resize },
+	{ MOD, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion,   button_release },
+	{ MOD, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, button_release },
 };
 
 static const button parent_buttons[] = {
-	{ 0, XCB_BUTTON_INDEX_1, mouse_move   },
-	{ 0, XCB_BUTTON_INDEX_3, mouse_resize },
+	{ 0, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion,   button_release },
+	{ 0, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, button_release },
 };
 
 /* keyboard controls */

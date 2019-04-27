@@ -1,4 +1,4 @@
-SRC = mywm.c workspace.c window.c rounded.c
+SRC = mywm.c workspace.c window.c rounded.c action.c
 OBJ = $(SRC:.c=.o)
 
 PREFIX = /usr/local
@@ -13,7 +13,7 @@ mywm: $(OBJ)
 
 install: mywm
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	cp -f araiwm $(DESTDIR)$(PREFIX)/bin
+	cp -f mywm $(DESTDIR)$(PREFIX)/bin
 	chmod 755 $(DESTDIR)$(PREFIX)/bin/mywm
 
 uninstall:

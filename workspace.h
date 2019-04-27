@@ -30,4 +30,6 @@ void excise_from_all_but(int ws, window *win);
 window *search_ws(int ws, int type, int window_index, xcb_window_t id);
 window *search_all(int *ws, int type, int window_index, xcb_window_t id);
 
+void refocus(int ws);
+
 #endif
