@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 #include <xcb/xcb_icccm.h>
 #include <xcb/shape.h>
 
