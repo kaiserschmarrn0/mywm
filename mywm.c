@@ -24,13 +24,17 @@ unsigned int sigcode = 0;
 
 static Display *dpy;
 static Visual *vis_ptr;
-static uint32_t depth;
+uint32_t depth;
 
-static XftFont *font;
+static XftFont *xfts[LEN(fonts)];
 
 xcb_connection_t *conn;
 xcb_ewmh_connection_t *ewmh;
 xcb_screen_t *scr;
+xcb_visualid_t vis;
+xcb_colormap_t cm;
+
+xcb_pixmap_t pixmaps[LEN(controls)][PM_COUNT];
 
 xcb_atom_t wm_atoms[WM_COUNT];
 xcb_atom_t ewmh__NET_WM_STATE_FOCUSED; //not in ewmh
@@ -162,9 +166,10 @@ static int button_press_helper(xcb_button_press_event_t *e, int len, const butto
 static void button_press(xcb_generic_event_t *ev) {
 	xcb_button_press_event_t *e = (xcb_button_press_event_t *)ev;
 
-	for (int i = 0; i < LEN(controls); i++) {
-		if (stack[curws].fwin->controls[i] == e->child) {
-			button_press_helper(e, controls[i].buttons_len, controls[i].buttons, e->event,
+	for (int i = WIN_COUNT; i < REGION_COUNT; i++) {
+		if (stack[curws].fwin->windows[i] == e->child) {
+			button_press_helper(e, controls[i - WIN_COUNT].buttons_len,
+					controls[i - WIN_COUNT].buttons, e->event,
 					e->event_x, e->event_y);
 			return;
 		}
@@ -329,6 +334,16 @@ static void die() {
 	xcb_ungrab_key(conn, XCB_GRAB_ANY, scr->root, XCB_MOD_MASK_ANY);
 	xcb_key_symbols_free(keysyms);
 
+	for (int i = 0; i < LEN(controls); i++) {
+		for (int j = 0; j < PM_COUNT; j++) {
+			xcb_free_pixmap(conn, pixmaps[i][j]);
+		}
+	}
+
+	for (int i = 0; i < LEN(fonts); i++) {
+		XftFontClose(dpy, xfts[i]);
+	}
+
 	xcb_flush(conn);
 
 	xcb_disconnect(conn);
@@ -338,12 +353,68 @@ static void catch(int sig) {
 	sigcode = sig;
 }
 
+static void expose(xcb_generic_event_t *ev) {
+	xcb_expose_event_t *e = (xcb_expose_event_t *)ev;
+
+	search_data data = search_range(curws, TYPE_NORMAL, WIN_COUNT, REGION_COUNT, e->window);
+	if (!data.win) {
+		return;
+	}
+	
+	draw_region(data.win, data.index, PM_UNFOCUS_DEFAULT);
+}
+
 int main(void) {
 	signal(SIGINT, catch);
 	signal(SIGTERM, catch);
-	
-	conn = xcb_connect(NULL, NULL);
+
+	dpy = XOpenDisplay(0);
+	conn = XGetXCBConnection(dpy);
+	XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
 	scr = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
+
+	XVisualInfo xv, *res = NULL;
+	xv.depth = 32;
+	int flag = 0;
+	res = XGetVisualInfo(dpy, VisualDepthMask, &xv, &flag);
+	if (flag > 0) {
+		vis_ptr = res->visual;
+		vis = res->visualid;
+	} else {
+		vis_ptr = DefaultVisual(dpy, 0);
+		vis = scr->root_visual;
+	}
+
+	cm = xcb_generate_id(conn);
+	xcb_create_colormap(conn, XCB_COLORMAP_ALLOC_NONE, cm, scr->root, vis);
+
+	depth = (vis == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
+
+	for (int i = 0; i < LEN(fonts); i++) {
+		xfts[i] = XftFontOpenName(dpy, 0, fonts[i]);
+	}
+
+	for (int i = 0; i < LEN(controls); i++) {
+		for (int j = 0; j < PM_COUNT; j++) {
+			pixmaps[i][j] = xcb_generate_id(conn);
+			xcb_create_pixmap(conn, depth, pixmaps[i][j], scr->root,
+					controls[i].geom.width, controls[i].geom.height);
+
+			xcb_gcontext_t gc = xcb_generate_id(conn);
+			uint32_t vals[2];
+			vals[0] = controls[i].colors[PM_BG(j)];
+			printf("BRO 0x%x\n", vals[0]);
+			vals[1] = 0;
+			xcb_create_gc(conn, gc, pixmaps[i][j], XCB_GC_FOREGROUND |
+					XCB_GC_GRAPHICS_EXPOSURES, vals);
+
+			xcb_rectangle_t rect = { 0, 0, controls[i].geom.width,
+					controls[i].geom.height };
+			xcb_poly_fill_rectangle_checked(conn, pixmaps[i][j], gc, 1, &rect);
+
+			xcb_free_gc(conn, gc);
+		}
+	}
 
 	uint32_t mask = XCB_CW_EVENT_MASK;
 	uint32_t val = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
@@ -414,6 +485,7 @@ int main(void) {
 	events[XCB_DESTROY_NOTIFY]    = destroy_notify;
 	events[XCB_ENTER_NOTIFY]      = enter_notify;
 	events[XCB_MAPPING_NOTIFY]    = mapping_notify;
+	events[XCB_EXPOSE]            = expose;
 
 	keysyms = xcb_key_symbols_alloc(conn);
 
@@ -443,6 +515,48 @@ int main(void) {
 
 	free(tr_reply);
 
+	/*
+
+		WOOOOOOOOOOOoooo
+
+	*/
+
+	/*xcb_window_t test = xcb_generate_id(conn);
+	mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
+	uint32_t vals[5];
+	vals[0] = 0xff000000;
+	vals[1] = 0xff000000;
+	vals[2] = 0;
+	vals[3] = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
+	vals[4] = cm;
+	xcb_create_window(conn, depth, test, scr->root, 200, 200, 200, 200,
+			0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+			vis, mask, vals);
+
+	xcb_map_window(conn, test);
+
+	xcb_pixmap_t pm = xcb_generate_id(conn);
+	xcb_create_pixmap(conn, depth, pm, scr->root, 50, 50);
+
+	xcb_gcontext_t gc = xcb_generate_id(conn);
+	vals[0] = 0xffffffff;
+	vals[1] = 0;
+	xcb_create_gc(conn, gc, pm, XCB_GC_FOREGROUND | XCB_GC_GRAPHICS_EXPOSURES, vals);
+
+	xcb_rectangle_t rect = { 0, 0, 50, 50 };
+	xcb_poly_fill_rectangle_checked(conn, pm, gc, 1, &rect);
+	
+	xcb_copy_area_checked(conn, pm, test, gc, 0, 0, 0, 0, 50, 50);
+
+	xcb_free_gc(conn, gc);
+
+	xcb_flush(conn);*/
+	/*
+
+		PLAAAAAAAAAAAAAAAAaaaaaaap
+	
+	*/
+
 	struct pollfd fd;
 	
 	fd.fd = xcb_get_file_descriptor(conn);
@@ -457,6 +571,10 @@ int main(void) {
 		}
 
 		while(ev = xcb_poll_for_event(conn)) {
+			if (ev->response_type == 0) {
+				printf("error\n");
+			}
+
 			if (events[ev->response_type & ~0x80]) {
 				events[ev->response_type & ~0x80](ev);
 			}

@@ -105,6 +105,19 @@ void excise_from_all_but(int ws, window *win) {
 	all_but_helper(ws, win, excise_from);
 }
 
+search_data search_range(int ws, int type, int start_index, int end_index, xcb_window_t id) {
+	search_data ret;
+	for (ret.win = stack[ws].lists[type]; ret.win; ret.win = ret.win->next[ws][type]) {
+		for (int i = start_index; i < end_index; i++) {
+			if (ret.win->windows[i] == id) {
+				ret.index = i;
+				return ret;
+			}
+		}
+	}
+	return ret;
+}
+
 window *search_ws(int ws, int type, int window_index, xcb_window_t id) {
 	window *cur;
 	for (cur = stack[ws].lists[type]; cur; cur = cur->next[ws][type]) {

@@ -15,8 +15,8 @@
 
 #define TITLE 16
 
-#define FOCUSCOL 0x4d484a
-#define UNFOCUSCOL 0x302e2f
+#define FOCUSCOL 0xff4d484a
+#define UNFOCUSCOL 0xff302e2f
 
 #define SNAP_MARGIN 5
 #define SNAP_CORNER 256
@@ -34,6 +34,10 @@
 
 #define MOD XCB_MOD_MASK_4
 #define SHIFT XCB_MOD_MASK_SHIFT
+
+static const char *fonts[] = {
+	"Font Awesome:size=14:autohint=true:antialias=true"
+};
 
 /* mouse controls */
 
@@ -56,8 +60,31 @@ static const button maximize_buttons[] = {
 };
 
 static const control controls[] = {
-	{ { 0, 0, TITLE, TITLE }, close_buttons, LEN(close_buttons) },
+	{
+		{ 0, 0, TITLE, TITLE }, "\uf004", NULL, close_buttons, LEN(close_buttons),
+		{
+			0xffffffff, 0xffffff00,
+			0xffffffff, 0xff000000,
+			0xffffffff, 0xff000000,
+			0xffffffff, 0xffffff00,
+			0xffffffff, 0xff000000,
+			0xffffffff, 0xff000000,
+		},
+	},
+	{
+		{ TITLE, 0, TITLE, TITLE }, "\uf004", NULL, maximize_buttons, LEN(maximize_buttons),
+		{
+			0xffffffff, 0xffff0000,
+			0xffffffff, 0xff000000,
+			0xffffffff, 0xff000000,
+			0xffffffff, 0xffff0000,
+			0xffffffff, 0xff000000,
+			0xffffffff, 0xff000000,
+		},
+	},
 };
+
+extern xcb_pixmap_t pixmaps[LEN(controls)][PM_COUNT]; //ree
 
 /* keyboard controls */
 

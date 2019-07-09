@@ -210,6 +210,8 @@ void free_client(window *subj, int ws) {
 	}
 
 	excise_from(ws, subj);
+
+	xcb_free_gc(conn, subj->gc);
 	free(subj);
 	
 	if (ws != curws || stack[curws].fwin != subj) {
@@ -355,13 +357,20 @@ static xcb_get_geometry_reply_t *w_get_geometry(xcb_window_t win) {
 	return xcb_get_geometry_reply(conn, cookie, NULL);
 }
 
+void draw_region(window *win, int window_index, int pm_index) {
+	int region_index = window_index - WIN_COUNT;
+	xcb_copy_area_checked(conn, pixmaps[region_index][pm_index], win->windows[window_index],
+			win->gc, 0, 0, 0, 0, controls[region_index].geom.width,
+			controls[region_index].geom.height);
+}
+
 void make_win_normal(window *win) {
 	xcb_change_save_set(conn, XCB_SET_MODE_INSERT, win->windows[WIN_CHILD]);
 
 	win->windows[WIN_PARENT] = xcb_generate_id(conn);
 	
 	uint32_t mask = XCB_CONFIG_WINDOW_BORDER_WIDTH;
-	uint32_t vals[4];
+	uint32_t vals[5];
 	vals[0] = 0;
 	xcb_configure_window(conn, win->windows[WIN_CHILD], mask, vals);
 
@@ -374,26 +383,41 @@ void make_win_normal(window *win) {
 	free(ptr);
 	free(init_geom);
 
-	mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
-	vals[0] = 1;
-	vals[1] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-			XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
-	xcb_create_window(conn, scr->root_depth, win->windows[WIN_PARENT], scr->root, x, y, w, h, 0,
-			XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, mask, vals);
+	mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK |
+			XCB_CW_COLORMAP;
+	vals[0] = 0xffffffff;
+	vals[1] = 0xFFFFFFFF;
+	vals[2] = 0;
+	vals[3] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+	vals[4] = cm;
+	xcb_create_window(conn, depth, win->windows[WIN_PARENT], scr->root, x, y, w, h, 0,
+			XCB_WINDOW_CLASS_INPUT_OUTPUT, vis, mask, vals);
 
-	for (int i = 0; i < LEN(controls); i++) {
-		win->controls[i] = xcb_generate_id(conn);
+	win->gc = xcb_generate_id(conn);
+	vals[0] = 0xffffff00;
+	vals[1] = 0;
+	xcb_create_gc(conn, win->gc, win->windows[WIN_PARENT], XCB_GC_FOREGROUND | XCB_GC_GRAPHICS_EXPOSURES, vals);
 
-		mask =  XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
-		vals[0] = scr->white_pixel;
-		vals[1] = 1;
-		vals[2] = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
-		xcb_create_window(conn, scr->root_depth, win->controls[i], win->windows[WIN_PARENT],
-				controls[i].geom.x, controls[i].geom.y, controls[i].geom.width,
-				controls[i].geom.height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-				XCB_COPY_FROM_PARENT, mask, vals);
+	for (int i = WIN_COUNT, j = 0; i < REGION_COUNT; i++, j++) {
+		win->windows[i] = xcb_generate_id(conn);
 
-		xcb_map_window(conn, win->controls[i]);
+		mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT |
+				XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
+		vals[0] = controls[i - WIN_COUNT].colors[PM_BG(PM_FOCUS_DEFAULT)];
+		vals[1] = 0xff000000;
+		vals[2] = 0;
+		vals[3] = XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_EXPOSURE;
+		vals[4] = cm;
+		xcb_create_window(conn, depth, win->windows[i], win->windows[WIN_PARENT],
+				controls[j].geom.x, controls[j].geom.y, controls[j].geom.width, 
+				controls[j].geom.height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+				vis, mask, vals);
+
+		xcb_map_window(conn, win->windows[i]);
+
+		xcb_flush(conn);
+
+		draw_region(win, i, PM_UNFOCUS_DEFAULT);
 	}
 
 	vals[0] = x;

@@ -12,6 +12,11 @@ typedef struct workspace {
 	window *fwin;
 } workspace;
 
+typedef struct {
+	window *win;
+	int index;
+} search_data;
+
 extern workspace stack[NUM_WS];
 extern int curws;
 
@@ -26,6 +31,8 @@ void excise_from(int ws, window *win);
 
 void insert_into_all_but(int ws, window *win);
 void excise_from_all_but(int ws, window *win);
+
+search_data search_range(int ws, int type, int start_index, int end_index, xcb_window_t id);
 
 window *search_ws(int ws, int type, int window_index, xcb_window_t id);
 window *search_all(int *ws, int type, int window_index, xcb_window_t id);

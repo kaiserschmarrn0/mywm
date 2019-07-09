@@ -13,7 +13,9 @@
 #define MOVE_RESIZE_MASK MOVE_MASK | RESIZE_MASK
 
 enum { TYPE_ALL, TYPE_NORMAL, TYPE_ABOVE, TYPE_COUNT };
+
 enum { WIN_CHILD, WIN_PARENT, WIN_COUNT };
+#define REGION_COUNT WIN_COUNT + LEN(controls)
 
 typedef struct window {
 	struct window *next[NUM_WS][TYPE_COUNT];
@@ -23,8 +25,8 @@ typedef struct window {
 	int above;
 	int sticky;
 
-	xcb_window_t windows[WIN_COUNT];
-	xcb_window_t controls[LEN(controls)];
+	xcb_window_t windows[WIN_COUNT + LEN(controls)];
+	xcb_gcontext_t gc;
 
 	uint32_t geom[4];
 
@@ -72,6 +74,8 @@ void free_client(window *subj, int ws);
 void forget_client(window *subj, int ws);
 
 void update_geometry(window *win, uint32_t mask, uint32_t *vals);
+
+void draw_region(window *win, int window_index, int pm_index);
 
 void make_win_normal(window *win);
 window *new_win(xcb_window_t child);
