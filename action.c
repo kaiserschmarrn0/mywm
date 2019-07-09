@@ -9,13 +9,13 @@ static uint32_t y = 0;
 //used for cycling
 static window *marker = NULL;
 
-void stick(int arg) {
+void stick(void *arg) {
 	if (stack[curws].fwin) {
 		stick_helper(stack[curws].fwin);
 	}
 }
 
-void close(int arg) {
+void close(void *arg) {
 	if (!stack[curws].fwin) {
 		return;
 	}
@@ -23,7 +23,7 @@ void close(int arg) {
 	xcb_unmap_window(conn, stack[curws].fwin->windows[WIN_PARENT]);
 	xcb_unmap_window(conn, stack[curws].fwin->windows[WIN_CHILD]);
 
-	kill(stack[curws].fwin->windows[WIN_CHILD]);
+	close_helper(stack[curws].fwin->windows[WIN_CHILD]);
 
 	forget_client(stack[curws].fwin, curws);
 }
@@ -31,7 +31,7 @@ void close(int arg) {
 static void cycle_raise(window *cur) {
 	for (; cur != stack[curws].fwin;) {
 		window *temp = cur->prev[curws][TYPE_NORMAL];
-		raise(cur); 
+		mywm_raise(cur); 
 		cur = temp;
 	}
 }
@@ -41,7 +41,7 @@ void stop_cycle() {
 	traverse(curws, TYPE_NORMAL, normal_events); 
 }
 
-void cycle(int arg) {
+void cycle(void *arg) {
 	if (!stack[curws].lists[TYPE_NORMAL] ||
 			!stack[curws].lists[TYPE_NORMAL]->next[curws][TYPE_NORMAL]) {
 		return;
@@ -57,7 +57,7 @@ void cycle(int arg) {
 		cycle_raise(marker);
 		marker = stack[curws].fwin;
 		center_pointer(marker->next[curws][TYPE_NORMAL]);
-		raise(marker->next[curws][TYPE_NORMAL]);
+		mywm_raise(marker->next[curws][TYPE_NORMAL]);
 	} else {
 		cycle_raise(marker);
 		center_pointer(stack[curws].lists[TYPE_NORMAL]);
@@ -65,21 +65,25 @@ void cycle(int arg) {
 	}
 }
 
-void change_ws(int arg) {
-	if (arg == curws) {
+void change_ws(void *arg) {
+	int new_ws = *(int *)arg;
+
+	if (new_ws == curws) {
 		return;
 	}
 
-	traverse(arg, TYPE_NORMAL, show);
+	traverse(new_ws, TYPE_NORMAL, show);
 	traverse(curws, TYPE_NORMAL, hide); 
 	
-	curws = arg;
+	curws = new_ws;
 
-	refocus(arg);
+	refocus(new_ws);
 }
 
-void send_ws(int arg) {
-	if (!stack[curws].fwin || arg == curws || stack[curws].fwin->sticky) {
+void send_ws(void *arg) {
+	int new_ws = *(int *)arg;
+
+	if (!stack[curws].fwin || new_ws == curws || stack[curws].fwin->sticky) {
 		return;
 	}
 
@@ -87,7 +91,7 @@ void send_ws(int arg) {
 	xcb_unmap_window(conn, stack[curws].fwin->windows[WIN_PARENT]);
 
 	excise_from(curws, stack[curws].fwin);
-	insert_into(arg, stack[curws].fwin);
+	insert_into(new_ws, stack[curws].fwin);
 	stack[curws].fwin = NULL;
 }
 
@@ -103,7 +107,7 @@ static void snap_restore_state(window *win) {
 	update_geometry(win, MOVE_RESIZE_MASK, win->before_snap);
 }
 
-#define SNAP_TEMPLATE(A, B, C, D, E) void A(int arg) {                                            \
+#define SNAP_TEMPLATE(A, B, C, D, E) void A(void *arg) {                                          \
 	if (!stack[curws].fwin || stack[curws].fwin->is_e_full || stack[curws].fwin->is_i_full) { \
 		return;                                                                           \
 	}                                                                                         \
@@ -124,7 +128,7 @@ static void snap_restore_state(window *win) {
 	}                                                                                         \
 	                                                                                          \
 	center_pointer(stack[curws].fwin);                                                        \
-	safe_raise(stack[curws].fwin);                                                             \
+	safe_raise(stack[curws].fwin);                                                            \
 }
 
 #ifndef SNAP_MAX_SMART
@@ -177,7 +181,7 @@ SNAP_TEMPLATE(snap_rd,
 	scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2,
 	(scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER)
 
-void int_full(int arg) {
+void int_full(void *arg) {
 	if (!stack[curws].fwin) {
 		return;
 	}
@@ -221,23 +225,25 @@ static void grab_pointer() {
 			XCB_CURRENT_TIME);
 }
 
-void mouse_move(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
+void mouse_move(void *arg) {
+	press_arg *info = (press_arg *)arg;
+
 	xcb_get_geometry_reply_t *geom;
 	
-	if (!move_resize_helper(win, &geom)) {
+	if (!move_resize_helper(info->win, &geom)) {
 		return;
 	}
 
 	if (stack[curws].fwin->is_snap) {
 		x = stack[curws].fwin->before_snap[GEOM_W] *
-				(event_x - stack[curws].fwin->geom[GEOM_X]) /
+				(info->event_x - stack[curws].fwin->geom[GEOM_X]) /
 				stack[curws].fwin->geom[GEOM_W];
 		y = stack[curws].fwin->before_snap[GEOM_H] *
-				(event_y - stack[curws].fwin->geom[GEOM_Y]) /
+				(info->event_y - stack[curws].fwin->geom[GEOM_Y]) /
 				stack[curws].fwin->geom[GEOM_H];
 	} else {
-		x = event_x - stack[curws].fwin->geom[GEOM_X];
-		y = event_y - stack[curws].fwin->geom[GEOM_Y];
+		x = info->event_x - stack[curws].fwin->geom[GEOM_X];
+		y = info->event_y - stack[curws].fwin->geom[GEOM_Y];
 	}
 	
 	state = MOVE;
@@ -245,35 +251,37 @@ void mouse_move(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
 	grab_pointer();
 }
 
-void mouse_resize(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
+void mouse_resize(void *arg) {
+	press_arg *info = (press_arg *)arg;
+
 	xcb_get_geometry_reply_t *geom;
 
-	if (!move_resize_helper(win, &geom)) {
+	if (!move_resize_helper(info->win, &geom)) {
 		return;
 	}
 
 	stack[curws].fwin->is_snap = 0;
-	x = stack[curws].fwin->geom[GEOM_W] - event_x;
-	y = stack[curws].fwin->geom[GEOM_H] - event_y;
+	x = stack[curws].fwin->geom[GEOM_W] - info->event_x;
+	y = stack[curws].fwin->geom[GEOM_H] - info->event_y;
 
 	state = RESIZE;
 	
 	grab_pointer();
 }
 
-static void mouse_snap(uint32_t ptr_pos, uint32_t tolerance, void (*snap_x)(int arg),
-		void (*snap_y)(int arg), void (*snap_z)(int arg)) {
+static void mouse_snap(uint32_t ptr_pos, uint32_t tolerance, void (*snap_x)(void *arg),
+		void (*snap_y)(void *arg), void (*snap_z)(void *arg)) {
 	if (ptr_pos < SNAP_CORNER) {
-		snap_x(0);
+		snap_x(NULL);
 	} else if (ptr_pos > tolerance - SNAP_CORNER) {
-		snap_y(0);
+		snap_y(NULL);
 	} else {
-		snap_z(0);
+		snap_z(NULL);
 	}
 }
 
-void mouse_move_motion(xcb_generic_event_t *ev) {
-	xcb_motion_notify_event_t *e = (xcb_motion_notify_event_t *)ev;
+void mouse_move_motion(void *arg) {
+	xcb_motion_notify_event_t *e = (xcb_motion_notify_event_t *)arg;
 	xcb_query_pointer_reply_t *p = w_query_pointer();
 
 	if (p->root_x < SNAP_MARGIN) {
@@ -298,8 +306,8 @@ void mouse_move_motion(xcb_generic_event_t *ev) {
 	free(p);
 }
 
-void mouse_resize_motion(xcb_generic_event_t *ev) {
-	xcb_motion_notify_event_t *e = (xcb_motion_notify_event_t *)ev;
+void mouse_resize_motion(void *arg) {
+	xcb_motion_notify_event_t *e = (xcb_motion_notify_event_t *)arg;
 	xcb_query_pointer_reply_t *p = w_query_pointer();
 
 	uint32_t vals[2];
@@ -310,7 +318,7 @@ void mouse_resize_motion(xcb_generic_event_t *ev) {
 	free(p);
 }
 
-void button_release(xcb_generic_event_t *ev) {
+void button_release(void *arg) {
 	xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
 	state = DEFAULT;
 
@@ -318,8 +326,10 @@ void button_release(xcb_generic_event_t *ev) {
 	events[XCB_BUTTON_RELEASE] = NULL; //jic
 }
 
-void mouse_roll_up(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
-	window *found = search_ws(curws, TYPE_NORMAL, WIN_PARENT, win);
+void mouse_roll_up(void *arg) {
+	press_arg *info = (press_arg *)arg;
+
+	window *found = search_ws(curws, TYPE_NORMAL, WIN_PARENT, info->win);
 	if (!found || !found->normal || found != stack[curws].fwin || found->is_roll) {
 		return;
 	}
@@ -332,8 +342,10 @@ void mouse_roll_up(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
 	found->is_roll = 1;
 }
 
-void mouse_roll_down(xcb_window_t win, uint32_t event_x, uint32_t event_y) {
-	window *found = search_ws(curws, TYPE_NORMAL, WIN_PARENT, win);
+void mouse_roll_down(void *arg) {
+	press_arg *info = (press_arg *)arg;
+
+	window *found = search_ws(curws, TYPE_NORMAL, WIN_PARENT, info->win);
 	if (!found || !found->normal || found != stack[curws].fwin || !found->is_roll) {
 		return;
 	}

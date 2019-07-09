@@ -34,14 +34,14 @@ void stack_above(window *win) {
 	xcb_configure_window(conn, win->windows[WIN_PARENT], mask, &val);
 }
 
-void raise(window *win) {
+void mywm_raise(window *win) {
 	excise_from(curws, win);
 	insert_into(curws, win);
 }
 
 void safe_raise(window *win) {
 	if (win != stack[curws].lists[TYPE_ALL]) {
-		raise(win);
+		mywm_raise(win);
 	}
 }
 
@@ -79,10 +79,7 @@ void focus(window *win) {
 	ewmh_state(win);
 }
 
-void show(window *win) {
-	xcb_map_window(conn, win->windows[WIN_CHILD]);	
-	xcb_map_window(conn, win->windows[WIN_PARENT]);	
-
+void show_state(window *win) {
 	uint32_t vals[2];
 	vals[0] = XCB_ICCCM_WM_STATE_NORMAL;
 	vals[1] = XCB_NONE;
@@ -91,8 +88,15 @@ void show(window *win) {
 			wm_atoms[WM_STATE], 32, 2, vals);
 
 	win->ignore_unmap = 0;
-	
+
 	ewmh_state(win);
+}
+
+void show(window *win) {
+	xcb_map_window(conn, win->windows[WIN_CHILD]);	
+	xcb_map_window(conn, win->windows[WIN_PARENT]);	
+
+	show_state(win);
 }
 
 void hide(window *win) {
@@ -168,7 +172,7 @@ void full_save_state(window *win) {
 void full_restore_state(window *win) {
 	update_geometry(win, MOVE_RESIZE_MASK, win->before_full);
 
-	safe_traverse(curws, TYPE_ABOVE, raise);
+	safe_traverse(curws, TYPE_ABOVE, mywm_raise);
 }
 
 void full(window *win) {
@@ -200,14 +204,7 @@ void ext_full(window *subj) {
 	full(stack[curws].fwin);	
 }
 
-void forget_client(window *subj, int ws) {
-	xcb_reparent_window(conn, subj->windows[WIN_CHILD], scr->root, 0, 0);
-	xcb_destroy_window(conn, subj->windows[WIN_PARENT]);
-
-	if ((state == MOVE || state == RESIZE) && subj == stack[curws].fwin) {
-		button_release(NULL);
-	}
-
+void free_client(window *subj, int ws) {
 	if (subj->sticky) {
 		excise_from_all_but(ws, subj);
 	}
@@ -224,13 +221,25 @@ void forget_client(window *subj, int ws) {
 	refocus(ws);
 }
 
+void forget_client(window *win, int ws) {
+	xcb_change_save_set(conn, XCB_SET_MODE_DELETE, win->windows[WIN_CHILD]);
+
+	xcb_reparent_window(conn, win->windows[WIN_CHILD], scr->root, 0, 0);
+	xcb_map_window(conn, win->windows[WIN_CHILD]);
+	xcb_destroy_window(conn, win->windows[WIN_PARENT]);
+
+	if ((state == MOVE || state == RESIZE) && win == stack[curws].fwin) {
+		button_release(NULL);
+	}
+
+	free_client(win, ws);	
+}
+
 void update_geometry(window *win, uint32_t mask, uint32_t *vals) {
 	int p = 0;
 	size_t c = 0;
 	uint32_t child_mask = 0;
 
-	int wider = 0;
-	
 	xcb_configure_window(conn, win->windows[WIN_PARENT], mask, vals);
 
 	if (mask & XCB_CONFIG_WINDOW_X) {
@@ -238,17 +247,19 @@ void update_geometry(window *win, uint32_t mask, uint32_t *vals) {
 		p++;
 		c++;
 	}
+
 	if (mask & XCB_CONFIG_WINDOW_Y) {
 		win->geom[1] = vals[p];
 		p++;
 		c++;
 	}
+
 	if (mask & XCB_CONFIG_WINDOW_WIDTH) {
-		wider = win->geom[GEOM_W] > vals[p];
 		win->geom[2] = vals[p];
 		child_mask |= XCB_CONFIG_WINDOW_WIDTH;
 		p++;
 	}
+
 	if (mask & XCB_CONFIG_WINDOW_HEIGHT) {
 		win->geom[3] = vals[p];
 		vals[p] -= TITLE;
@@ -274,7 +285,9 @@ void update_geometry(window *win, uint32_t mask, uint32_t *vals) {
 #ifdef ROUNDED
 	if (p > c) {
 		rounded_corners(win);	
-	} else if (win->is_snap && GAP == 0) {
+	}
+
+	if (win->is_snap || win->is_i_full || win->is_e_full) {
 		xcb_shape_mask(conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING, win->windows[WIN_PARENT], 0, 0, XCB_NONE);
 	}
 #endif
@@ -282,4 +295,152 @@ void update_geometry(window *win, uint32_t mask, uint32_t *vals) {
 	if (child_mask) {
 		xcb_configure_window(conn, win->windows[WIN_CHILD], child_mask, vals + c);
 	}
+}
+
+static uint32_t size_helper(uint32_t win_sze, uint32_t scr_sze) {
+	return win_sze > scr_sze ? scr_sze : win_sze;
+}
+
+static uint32_t place_helper(uint32_t ptr_pos, uint32_t win_sze, uint32_t scr_sze) {
+	if (ptr_pos < win_sze / 2 + BORDER) {
+		return 0;
+	} else if (ptr_pos + win_sze / 2 + BORDER > scr_sze) {
+		return scr_sze - win_sze - 2 * BORDER;
+	} else {
+		return ptr_pos - win_sze / 2 - BORDER;
+	}
+}
+
+static void test_window_type(window *win, xcb_ewmh_get_atoms_reply_t type, int i) {
+	if (type.atoms[i] != ewmh->_NET_WM_WINDOW_TYPE_DOCK 
+			&& type.atoms[i] != ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR
+			&& type.atoms[i] != ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
+		return;
+	}
+
+	win->normal = 0;
+
+	uint32_t mask = XCB_CW_EVENT_MASK;
+	uint32_t val = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
+	xcb_configure_window(conn, win->windows[WIN_PARENT], mask, &val);
+
+	xcb_map_window(conn, win->windows[WIN_PARENT]);
+}
+
+static void test_window_state(window *win, xcb_ewmh_get_atoms_reply_t type, int i) {
+	if (type.atoms[i] == ewmh->_NET_WM_STATE_STICKY) {
+		stick_helper(win);
+	}
+	if (type.atoms[i] == ewmh->_NET_WM_STATE_ABOVE) {
+		win->above = 1;
+	}
+}
+
+static void window_property_helper(xcb_get_property_cookie_t cookie, window *win, 
+		void (*func)(window *, xcb_ewmh_get_atoms_reply_t, int)) {
+	xcb_ewmh_get_atoms_reply_t type;
+	if (!xcb_ewmh_get_wm_window_type_reply(ewmh, cookie, &type, NULL)) {
+		return;
+	}
+	
+	for (int i = 0; i < type.atoms_len; i++) {
+		func(win, type, i);
+	}
+		
+	xcb_ewmh_get_atoms_reply_wipe(&type);
+}
+
+static xcb_get_geometry_reply_t *w_get_geometry(xcb_window_t win) {
+	xcb_get_geometry_cookie_t cookie = xcb_get_geometry(conn, win);
+	return xcb_get_geometry_reply(conn, cookie, NULL);
+}
+
+void make_win_normal(window *win) {
+	xcb_change_save_set(conn, XCB_SET_MODE_INSERT, win->windows[WIN_CHILD]);
+
+	win->windows[WIN_PARENT] = xcb_generate_id(conn);
+	
+	uint32_t mask = XCB_CONFIG_WINDOW_BORDER_WIDTH;
+	uint32_t vals[4];
+	vals[0] = 0;
+	xcb_configure_window(conn, win->windows[WIN_CHILD], mask, vals);
+
+	xcb_get_geometry_reply_t *init_geom = w_get_geometry(win->windows[WIN_CHILD]);
+	xcb_query_pointer_reply_t *ptr = w_query_pointer();
+	uint32_t w = size_helper(init_geom->width, scr->width_in_pixels);
+	uint32_t h = size_helper(init_geom->height + TITLE, scr->height_in_pixels - TOP - BOT);
+	uint32_t x = place_helper(ptr->root_x, w, scr->width_in_pixels);
+	uint32_t y = TOP + place_helper(ptr->root_y - TOP, h, scr->height_in_pixels - TOP - BOT);
+	free(ptr);
+	free(init_geom);
+
+	mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
+	vals[0] = 1;
+	vals[1] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+			XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+	xcb_create_window(conn, scr->root_depth, win->windows[WIN_PARENT], scr->root, x, y, w, h, 0,
+			XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, mask, vals);
+
+	for (int i = 0; i < LEN(controls); i++) {
+		win->controls[i] = xcb_generate_id(conn);
+
+		mask =  XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
+		vals[0] = scr->white_pixel;
+		vals[1] = 1;
+		vals[2] = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
+		xcb_create_window(conn, scr->root_depth, win->controls[i], win->windows[WIN_PARENT],
+				controls[i].geom.x, controls[i].geom.y, controls[i].geom.width,
+				controls[i].geom.height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+				XCB_COPY_FROM_PARENT, mask, vals);
+
+		xcb_map_window(conn, win->controls[i]);
+	}
+
+	vals[0] = x;
+	vals[1] = y;
+	vals[2] = w;
+	vals[3] = h;
+	update_geometry(win, MOVE_RESIZE_MASK, vals);
+
+	mask = XCB_CW_EVENT_MASK;
+	vals[0] = XCB_EVENT_MASK_PROPERTY_CHANGE;
+	xcb_change_window_attributes(conn, win->windows[WIN_CHILD], mask, vals);
+
+	normal_events(win);
+	
+	xcb_reparent_window(conn, win->windows[WIN_CHILD], win->windows[WIN_PARENT], 0, TITLE);
+
+	if (!state) {
+		focus(win);
+	} else {
+		unfocus(win);
+	}
+}
+
+window *new_win(xcb_window_t child) {
+	window *win = malloc(sizeof(window));
+	win->windows[WIN_PARENT] = child;
+	win->windows[WIN_CHILD] = child;
+	win->ignore_unmap = 0;
+	win->is_roll = 0;
+	win->is_snap = 0;
+	win->is_e_full = 0;
+	win->is_i_full = 0;
+	win->sticky = 0;
+	win->above = 0;
+	win->normal = 1;
+
+	uint32_t vals[4];
+	uint32_t mask;
+
+	window_property_helper(xcb_ewmh_get_wm_window_type(ewmh, child), win, test_window_type);
+	window_property_helper(xcb_ewmh_get_wm_state(ewmh, child), win, test_window_state);
+	
+	if (win->normal) {
+		make_win_normal(win);
+	}
+	
+	insert_into(curws, win);
+
+	return win;
 }

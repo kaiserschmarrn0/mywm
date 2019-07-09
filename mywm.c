@@ -1,3 +1,5 @@
+#include <signal.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -6,16 +8,25 @@
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/shape.h>
+
 #include <X11/keysym.h>
+#include <X11/Xlib-xcb.h>
+#include <X11/Xft/Xft.h>
 
 #include "config.h"
 #include "window.h"
 #include "workspace.h"
 #include "rounded.h"
 
-#define LEN(A) sizeof(A)/sizeof(*A)
-
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT, };
+
+unsigned int sigcode = 0;
+
+static Display *dpy;
+static Visual *vis_ptr;
+static uint32_t depth;
+
+static XftFont *font;
 
 xcb_connection_t *conn;
 xcb_ewmh_connection_t *ewmh;
@@ -46,11 +57,6 @@ static void map(window *subj) {
 	}
 
 	xcb_map_window(conn, subj->windows[WIN_PARENT]);
-}
-
-static xcb_get_geometry_reply_t *w_get_geometry(xcb_window_t win) {
-	xcb_get_geometry_cookie_t cookie = xcb_get_geometry(conn, win);
-	return xcb_get_geometry_reply(conn, cookie, NULL);
 }
 
 xcb_query_pointer_reply_t *w_query_pointer() {
@@ -85,7 +91,7 @@ static void grab_keys() {
 	}
 }
 
-void kill(xcb_window_t win) {
+void close_helper(xcb_window_t win) {
 	xcb_icccm_get_wm_protocols_reply_t pro;
 	xcb_get_property_cookie_t cookie;
 	cookie = xcb_icccm_get_wm_protocols_unchecked(conn, win, ewmh->WM_PROTOCOLS);
@@ -118,126 +124,15 @@ void kill(xcb_window_t win) {
 	xcb_send_event(conn, 0, win, mask, (char *)&ev);
 }
 
-static uint32_t size_helper(uint32_t win_sze, uint32_t scr_sze) {
-	return win_sze > scr_sze ? scr_sze : win_sze;
-}
-
-static uint32_t place_helper(uint32_t ptr_pos, uint32_t win_sze, uint32_t scr_sze) {
-	if (ptr_pos < win_sze / 2 + BORDER) {
-		return 0;
-	} else if (ptr_pos + win_sze / 2 + BORDER > scr_sze) {
-		return scr_sze - win_sze - 2 * BORDER;
-	} else {
-		return ptr_pos - win_sze / 2 - BORDER;
-	}
-}
-
 static void map_request(xcb_generic_event_t *ev) {
 	xcb_map_request_event_t *e = (xcb_map_request_event_t *)ev;
 	if (search_all(NULL, TYPE_ALL, WIN_CHILD, e->window)) {
 		return;
 	}
-	
-	window *win = malloc(sizeof(window));
-	win->windows[WIN_PARENT] = e->window;
-	win->windows[WIN_CHILD] = e->window;
-	win->ignore_unmap = 0;
-	win->is_roll = 0;
-	win->is_snap = 0;
-	win->is_e_full = 0;
-	win->is_i_full = 0;
-	win->sticky = 0;
-	win->above = 0;
-	win->normal = 1;
 
-	uint32_t vals[4];
-	uint32_t mask;
+	window *win = new_win(e->window);
 
-	xcb_get_property_cookie_t cookie = xcb_ewmh_get_wm_window_type(ewmh, e->window);
-	xcb_ewmh_get_atoms_reply_t type;
-	if (xcb_ewmh_get_wm_window_type_reply(ewmh, cookie, &type, NULL)) {
-		for (unsigned int i = 0; i < type.atoms_len; i++) {		
-			if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK 
-					|| type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR
-					|| type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
-				win->normal = 0;
-
-				mask = XCB_CW_EVENT_MASK;
-				vals[0] = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
-				xcb_configure_window(conn, win->windows[WIN_PARENT], mask, vals);
-				
-				xcb_map_window(conn, e->window);
-			}
-		}
-		xcb_ewmh_get_atoms_reply_wipe(&type);
-	}
-
-	cookie = xcb_ewmh_get_wm_state(ewmh, e->window);
-	if (xcb_ewmh_get_wm_state_reply(ewmh, cookie, &type, NULL)) {
-		for (unsigned int i = 0; i < type.atoms_len; i++) {		
-			if (type.atoms[i] == ewmh->_NET_WM_STATE_STICKY) {
-				stick_helper(win);
-			}
-			if (type.atoms[i] == ewmh->_NET_WM_STATE_ABOVE) {
-				win->above = 1;
-			}
-		}
-		xcb_ewmh_get_atoms_reply_wipe(&type);
-	}
-	
-	if (win->normal) {
-		win->windows[WIN_PARENT] = xcb_generate_id(conn);
-	
-		mask = XCB_CONFIG_WINDOW_BORDER_WIDTH;
-		vals[0] = 0;
-		xcb_configure_window(conn, win->windows[WIN_CHILD], mask, vals);
-
-		xcb_get_geometry_reply_t *init_geom = w_get_geometry(win->windows[WIN_CHILD]);
-		xcb_query_pointer_reply_t *ptr = w_query_pointer();
-		uint32_t w = size_helper(init_geom->width, scr->width_in_pixels);
-		uint32_t h = size_helper(init_geom->height + TITLE, scr->height_in_pixels);
-		uint32_t x = place_helper(ptr->root_x, w, scr->width_in_pixels);
-		uint32_t y = place_helper(ptr->root_y, h, scr->height_in_pixels);
-		free(ptr);
-		free(init_geom);
-	
-		mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
-		vals[0] = 1;
-		vals[1] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-				XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
-		xcb_create_window(conn, scr->root_depth, win->windows[WIN_PARENT], scr->root, x, y, w, h, 0,
-				XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, mask, vals);
-	
-		vals[0] = x;
-		vals[1] = y;
-		vals[2] = w;
-		vals[3] = h;
-		update_geometry(win, MOVE_RESIZE_MASK, vals);
-	
-		mask = XCB_CW_EVENT_MASK;
-		vals[0] = XCB_EVENT_MASK_PROPERTY_CHANGE;
-		xcb_change_window_attributes(conn, win->windows[WIN_CHILD], mask, vals);
-	
-		normal_events(win);
-		
-		xcb_reparent_window(conn, win->windows[WIN_CHILD], win->windows[WIN_PARENT], 0, TITLE);
-		xcb_map_window(conn, win->windows[WIN_CHILD]);
-
-		if (!state) {
-			focus(win);
-		} else {
-			unfocus(win);
-		}
-	}
-	
-	insert_into(curws, win);
-
-	xcb_map_window(conn, win->windows[WIN_PARENT]);
-
-	vals[0] = XCB_ICCCM_WM_STATE_NORMAL;
-	vals[1] = XCB_NONE;
-	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win->windows[WIN_CHILD], wm_atoms[WM_STATE],
-	wm_atoms[WM_STATE], 32, 2, vals);
+	show(win);
 }
 
 static void enter_notify(xcb_generic_event_t *ev) {
@@ -252,9 +147,11 @@ static int button_press_helper(xcb_button_press_event_t *e, int len, const butto
 		xcb_window_t win, uint32_t x, uint32_t y) {
 	for (int i = 0; i < len; i++) {
 		if (e->detail == list[i].button && list[i].mod == e->state) {
-			list[i].press(win, x, y);
-			events[XCB_MOTION_NOTIFY] = list[i].motion;
-			events[XCB_BUTTON_RELEASE] = list[i].release;
+			if (list[i].press) {
+				list[i].press(&(press_arg){ win, x, y });
+			}
+			events[XCB_MOTION_NOTIFY] = (void (*)(xcb_generic_event_t *))list[i].motion;
+			events[XCB_BUTTON_RELEASE] = (void (*)(xcb_generic_event_t *))list[i].release;
 			return 1;
 		}
 	}
@@ -265,13 +162,21 @@ static int button_press_helper(xcb_button_press_event_t *e, int len, const butto
 static void button_press(xcb_generic_event_t *ev) {
 	xcb_button_press_event_t *e = (xcb_button_press_event_t *)ev;
 
+	for (int i = 0; i < LEN(controls); i++) {
+		if (stack[curws].fwin->controls[i] == e->child) {
+			button_press_helper(e, controls[i].buttons_len, controls[i].buttons, e->event,
+					e->event_x, e->event_y);
+			return;
+		}
+	}
+
 	if (button_press_helper(e, LEN(parent_buttons), parent_buttons, e->event, e->root_x,
 			e->root_y)) {
 		return;
 	}
 	if (button_press_helper(e, LEN(grab_buttons), grab_buttons, e->child, e->event_x,
 			e->event_y)) {
-		return; //future
+		return;
 	}
 }
 
@@ -323,7 +228,7 @@ static void destroy_notify(xcb_generic_event_t *ev) {
 	window *found = search_all(&ws, TYPE_ALL, WIN_CHILD, e->window);
 	
 	if (found) {
-		forget_client(found, ws);
+		free_client(found, ws);
 	}
 }
 
@@ -406,29 +311,37 @@ static void configure_request(xcb_generic_event_t *ev) {
 		
 	if (e->value_mask & XCB_CONFIG_WINDOW_STACK_MODE) {
 		switch (e->stack_mode) {
-			case XCB_STACK_MODE_ABOVE: raise(found); break;
+			case XCB_STACK_MODE_ABOVE: mywm_raise(found); break;
 			case XCB_STACK_MODE_BELOW: /* dumbass */ break;
 		}
 	}
 }
 
 static void cleanup(window *win) {
-	kill(win->windows[WIN_CHILD]);
-	free(win);
+	forget_client(win, curws);
 }
 
 static void die() {
-	for (int i = 0; i < NUM_WS; i++) {
-		safe_traverse(i, TYPE_ALL, cleanup);
+	for (curws = 0; curws < NUM_WS; curws++) {
+		safe_traverse(curws, TYPE_ALL, cleanup);
 	}
 
 	xcb_ungrab_key(conn, XCB_GRAB_ANY, scr->root, XCB_MOD_MASK_ANY);
 	xcb_key_symbols_free(keysyms);
 
+	xcb_flush(conn);
+
 	xcb_disconnect(conn);
 }
 
+static void catch(int sig) {
+	sigcode = sig;
+}
+
 int main(void) {
+	signal(SIGINT, catch);
+	signal(SIGTERM, catch);
+	
 	conn = xcb_connect(NULL, NULL);
 	scr = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
 
@@ -436,8 +349,7 @@ int main(void) {
 	uint32_t val = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
 
 	xcb_change_window_attributes(conn, scr->root, mask, &val);
-	
-	atexit(die);
+	xcb_flush(conn);
 	
 	const xcb_query_extension_reply_t *shape_reply = xcb_get_extension_data(conn, &xcb_shape_id);
 	if (!shape_reply->present) {
@@ -505,18 +417,54 @@ int main(void) {
 
 	keysyms = xcb_key_symbols_alloc(conn);
 
+#ifdef ROUNDED
 	init_rounded_corners();
+#endif
+
+	xcb_query_tree_reply_t *tr_reply = xcb_query_tree_reply(conn,
+			xcb_query_tree(conn, scr->root), 0);
+
+	int ch_len = xcb_query_tree_children_length(tr_reply);
+	xcb_window_t *children = xcb_query_tree_children(tr_reply);
+
+	for (int i = 0; i < ch_len; i++) {
+		xcb_get_window_attributes_reply_t *attr = xcb_get_window_attributes_reply(conn,
+				xcb_get_window_attributes_unchecked(conn, children[i]), NULL);
+
+		if (!attr || attr->override_redirect || attr->map_state != XCB_MAP_STATE_VIEWABLE) {
+			continue;
+		}
+
+		window *cur = new_win(children[i]);
+		show(cur);
+
+		cur->ignore_unmap = 1;
+	}
+
+	free(tr_reply);
+
+	struct pollfd fd;
 	
+	fd.fd = xcb_get_file_descriptor(conn);
+	fd.events = POLLIN;
+
 	xcb_generic_event_t *ev;
-	for (; !xcb_connection_has_error(conn);) {
+	for (; !xcb_connection_has_error(conn) && sigcode == 0;) {
 		xcb_flush(conn);
 
-		ev = xcb_wait_for_event(conn);
-		if (events[ev->response_type & ~0x80]) {
-			events[ev->response_type & ~0x80](ev);
+		if (poll(&fd, 1, -1) == -1) {
+			break;
 		}
-		free(ev);
+
+		while(ev = xcb_poll_for_event(conn)) {
+			if (events[ev->response_type & ~0x80]) {
+				events[ev->response_type & ~0x80](ev);
+			}
+			free(ev);
+		}
 	}
+
+	die();
 
 	return 0;
 }

@@ -24,6 +24,7 @@ typedef struct window {
 	int sticky;
 
 	xcb_window_t windows[WIN_COUNT];
+	xcb_window_t controls[LEN(controls)];
 
 	uint32_t geom[4];
 
@@ -46,12 +47,13 @@ void normal_events(window *subj);
 void center_pointer(window *win);
 
 void stack_above(window *subj);
-void raise(window *subj);
+void mywm_raise(window *subj);
 void safe_raise(window *subj);
 
 void focus(window *subj);
 void unfocus(window *win);
 
+void show_state(window *win);
 void show(window *win);
 void hide(window *win);
 
@@ -66,8 +68,12 @@ void full_restore_state(window *win);
 void full(window *win);
 void ext_full(window *win);
 
+void free_client(window *subj, int ws);
 void forget_client(window *subj, int ws);
 
 void update_geometry(window *win, uint32_t mask, uint32_t *vals);
+
+void make_win_normal(window *win);
+window *new_win(xcb_window_t child);
 
 #endif

@@ -10,7 +10,7 @@
 
 #define TOP 0
 #define BOT 28
-#define GAP 8
+#define GAP 0
 #define BORDER 0
 
 #define TITLE 16
@@ -47,24 +47,38 @@ static const button parent_buttons[] = {
 	{ 0, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, button_release },
 };
 
+static const button close_buttons[] = {
+	{ 0, XCB_BUTTON_INDEX_1, NULL, NULL, close },
+};
+
+static const button maximize_buttons[] = {
+	{ 0, XCB_BUTTON_INDEX_1, NULL, NULL, snap_max },
+};
+
+static const control controls[] = {
+	{ { 0, 0, TITLE, TITLE }, close_buttons, LEN(close_buttons) },
+};
+
 /* keyboard controls */
 
 static const keybind keys[] = {
-	{ MOD,         XK_q,     close,     0 },
-	{ MOD,         XK_s,     stick,     0 },
-	{ MOD,         XK_Tab,   cycle,     0 },
-	{ MOD,         XK_Left,  snap_l,    0 },
-	{ MOD,         XK_Right, snap_r,    0 },
-	{ MOD,         XK_f,     snap_max,  0 },
-	{ MOD | SHIFT, XK_f,     int_full,  0 },
-	{ MOD,         XK_1,     change_ws, 0 },
-	{ MOD,         XK_2,     change_ws, 1 },
-	{ MOD,         XK_3,     change_ws, 2 },
-	{ MOD,         XK_4,     change_ws, 3 },
-	{ MOD | SHIFT, XK_1,     send_ws,   0 },
-	{ MOD | SHIFT, XK_2,     send_ws,   1 },
-	{ MOD | SHIFT, XK_3,     send_ws,   2 },
-	{ MOD | SHIFT, XK_4,     send_ws,   3 },
+	{ MOD,         XK_q,     close,     NULL      },
+	{ MOD,         XK_s,     stick,     NULL      },
+	{ MOD,         XK_Tab,   cycle,     NULL      },
+	{ MOD,         XK_Left,  snap_l,    NULL      },
+	{ MOD,         XK_Right, snap_r,    NULL      },
+	{ MOD,         XK_f,     snap_max,  NULL      },
+	{ MOD | SHIFT, XK_f,     int_full,  NULL      },
+
+	{ MOD,         XK_1,     change_ws, &(int){0} },
+	{ MOD,         XK_2,     change_ws, &(int){1} },
+	{ MOD,         XK_3,     change_ws, &(int){2} },
+	{ MOD,         XK_4,     change_ws, &(int){3} },
+
+	{ MOD | SHIFT, XK_1,     send_ws,   &(int){0} },
+	{ MOD | SHIFT, XK_2,     send_ws,   &(int){1} },
+	{ MOD | SHIFT, XK_3,     send_ws,   &(int){2} },
+	{ MOD | SHIFT, XK_4,     send_ws,   &(int){3} },
 };
 
 #endif

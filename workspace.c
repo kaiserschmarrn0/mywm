@@ -52,10 +52,12 @@ void insert_into(int ws, window *win) {
 		insert_into_helper(ws, TYPE_NORMAL, win);
 	}
 
+	print_stack(ws, TYPE_ALL);
+
 	if (win->above) {
 		insert_into_helper(ws, TYPE_ABOVE, win);
 	} else if (!win->is_i_full && !win->is_e_full) {
-		safe_traverse(ws, TYPE_ABOVE, raise);
+		safe_traverse(ws, TYPE_ABOVE, mywm_raise);
 	}
 }
 
@@ -72,6 +74,7 @@ static void excise_from_helper(int ws, int type, window *subj) {
 }
 
 void excise_from(int ws, window *win) {
+	/*printf("excised: %x\n", win->windows[WIN_CHILD]); meh */
 	if (win->normal) {
 		excise_from_helper(ws, TYPE_NORMAL, win);
 	}
@@ -127,25 +130,18 @@ window *search_all(int *ws, int type, int window_index, xcb_window_t id) {
 }
 
 void refocus(int ws) {
-	printf("\nrefocusing\n");
 	window *win;
 	if (stack[ws].fwin) {
 		win = stack[ws].fwin;
-		printf("got fwin\n");
 	} else if (stack[ws].lists[TYPE_NORMAL]) {
-		printf("got stack top\n");
 		win = stack[ws].lists[TYPE_NORMAL];	
 	} else {
-		printf("hmm... no fwin or stack\n");
 		return;
 	}
 
 	if (win->is_i_full || win->is_e_full) {
-		printf("raised\n");
-		raise(win);
+		mywm_raise(win);
 	}
 
-	if (win != stack[ws].fwin) {
-		focus(win);
-	}
+	focus(win);
 }
