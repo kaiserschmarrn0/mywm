@@ -45,6 +45,12 @@ void safe_raise(window *win) {
 	}
 }
 
+static void draw_regions(window *win, int pm_index) {
+	for (int i = WIN_COUNT; i < REGION_COUNT; i++) {
+		draw_region(win, i, pm_index);
+	}
+}
+
 void unfocus(window *win) {
 	uint32_t val = UNFOCUSCOL;
 	xcb_change_window_attributes(conn, win->windows[WIN_PARENT], XCB_CW_BACK_PIXEL, &val);
@@ -52,6 +58,8 @@ void unfocus(window *win) {
 	xcb_clear_area(conn, 0, win->windows[WIN_PARENT], 0, 0, win->geom[GEOM_W],
 			win->geom[GEOM_H]);
 
+	draw_regions(win, PM_UNFOCUS);
+	
 	stack[curws].fwin = NULL;
 
 	ewmh_state(win);
@@ -70,9 +78,11 @@ void focus(window *win) {
 
 	xcb_clear_area(conn, 0, win->windows[WIN_PARENT], 0, 0, win->geom[GEOM_W],
 			win->geom[GEOM_H]);
-
+		
 	xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, win->windows[WIN_CHILD],
 			XCB_CURRENT_TIME);
+	
+	draw_regions(win, PM_FOCUS);
 
 	stack[curws].fwin = win;
 	
@@ -86,6 +96,8 @@ void show_state(window *win) {
 	
 	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win->windows[WIN_CHILD], wm_atoms[WM_STATE], 
 			wm_atoms[WM_STATE], 32, 2, vals);
+	
+	draw_regions(win, PM_FOCUS);
 
 	win->ignore_unmap = 0;
 
@@ -362,6 +374,8 @@ void draw_region(window *win, int window_index, int pm_index) {
 	xcb_copy_area_checked(conn, pixmaps[region_index][pm_index], win->windows[window_index],
 			win->gc, 0, 0, 0, 0, controls[region_index].geom.width,
 			controls[region_index].geom.height);
+
+	win->last_pm[region_index] = pm_index;
 }
 
 void make_win_normal(window *win) {
@@ -370,7 +384,7 @@ void make_win_normal(window *win) {
 	win->windows[WIN_PARENT] = xcb_generate_id(conn);
 	
 	uint32_t mask = XCB_CONFIG_WINDOW_BORDER_WIDTH;
-	uint32_t vals[5];
+	uint32_t vals[6];
 	vals[0] = 0;
 	xcb_configure_window(conn, win->windows[WIN_CHILD], mask, vals);
 
@@ -386,7 +400,7 @@ void make_win_normal(window *win) {
 	mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK |
 			XCB_CW_COLORMAP;
 	vals[0] = 0xffffffff;
-	vals[1] = 0xFFFFFFFF;
+	vals[1] = 0xffffffff;
 	vals[2] = 0;
 	vals[3] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
 	vals[4] = cm;
@@ -401,13 +415,15 @@ void make_win_normal(window *win) {
 	for (int i = WIN_COUNT, j = 0; i < REGION_COUNT; i++, j++) {
 		win->windows[i] = xcb_generate_id(conn);
 
-		mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT |
-				XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
-		vals[0] = controls[i - WIN_COUNT].colors[PM_BG(PM_FOCUS_DEFAULT)];
+		mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_WIN_GRAVITY | 
+				XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
+		vals[0] = controls[i - WIN_COUNT].colors[PM_BG(PM_FOCUS)];
 		vals[1] = 0xff000000;
-		vals[2] = 0;
-		vals[3] = XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_EXPOSURE;
-		vals[4] = cm;
+		vals[2] = controls[j].gravity;
+		vals[3] = 0;
+		vals[4] = XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_EXPOSURE |
+				XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW;
+		vals[5] = cm;
 		xcb_create_window(conn, depth, win->windows[i], win->windows[WIN_PARENT],
 				controls[j].geom.x, controls[j].geom.y, controls[j].geom.width, 
 				controls[j].geom.height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
@@ -417,7 +433,7 @@ void make_win_normal(window *win) {
 
 		xcb_flush(conn);
 
-		draw_region(win, i, PM_UNFOCUS_DEFAULT);
+		draw_region(win, i, PM_FOCUS);
 	}
 
 	vals[0] = x;

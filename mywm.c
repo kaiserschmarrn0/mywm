@@ -144,6 +144,23 @@ static void enter_notify(xcb_generic_event_t *ev) {
 	window *found = search_ws(curws, TYPE_NORMAL, WIN_PARENT, e->event);
 	if (found && found->normal) {
 		focus(found);
+		return;
+	}
+
+	search_data data = search_range(curws, TYPE_NORMAL, WIN_COUNT, REGION_COUNT, e->event);
+	if (data.win) {
+		printf("hovering\n");
+		draw_region(data.win, data.index, PM_HOVER);
+	}
+}
+
+static void leave_notify(xcb_generic_event_t *ev) {
+	xcb_leave_notify_event_t *e = (xcb_enter_notify_event_t *)ev;
+
+	search_data data = search_range(curws, TYPE_NORMAL, WIN_COUNT, REGION_COUNT, e->event);
+	if (data.win) {
+		printf("leaving\n");
+		draw_region(data.win, data.index, PM_FOCUS);
 	}
 }
 
@@ -361,7 +378,48 @@ static void expose(xcb_generic_event_t *ev) {
 		return;
 	}
 	
-	draw_region(data.win, data.index, PM_UNFOCUS_DEFAULT);
+	draw_region(data.win, data.index, data.win->last_pm[data.index - WIN_COUNT]);
+}
+
+typedef union {
+	struct {
+		uint8_t b;
+		uint8_t g;
+		uint8_t r;
+		uint8_t a;
+	};
+	uint32_t v;
+} rgba;
+
+static uint32_t xcb_color(uint32_t hex) {
+	rgba col;
+	col.v = hex;
+
+	if (!col.a) {
+		return 0U;
+	}
+
+	col.r = (col.r * col.a) / 255;
+	col.g = (col.g * col.a) / 255;
+	col.b = (col.b * col.a) / 255;
+
+	return col.v;
+}
+
+XftColor xft_color(uint32_t hex) {
+	rgba col;
+	col.v = xcb_color(hex);
+
+	XRenderColor rc;
+	rc.red = col.r * 65535 / 255;
+	rc.green = col.g * 65535 / 255;
+	rc.blue = col.b * 65535 / 255;
+	rc.alpha = col.a * 65535 / 255;
+
+	XftColor ret;
+	XftColorAllocValue(dpy, vis_ptr, cm, &rc, &ret);
+
+	return ret;
 }
 
 int main(void) {
@@ -400,19 +458,34 @@ int main(void) {
 			xcb_create_pixmap(conn, depth, pixmaps[i][j], scr->root,
 					controls[i].geom.width, controls[i].geom.height);
 
+			int w = controls[i].geom.width;
+			int h = controls[i].geom.height;
+
 			xcb_gcontext_t gc = xcb_generate_id(conn);
+			uint32_t mask = XCB_GC_FOREGROUND | XCB_GC_GRAPHICS_EXPOSURES;
 			uint32_t vals[2];
 			vals[0] = controls[i].colors[PM_BG(j)];
-			printf("BRO 0x%x\n", vals[0]);
 			vals[1] = 0;
-			xcb_create_gc(conn, gc, pixmaps[i][j], XCB_GC_FOREGROUND |
-					XCB_GC_GRAPHICS_EXPOSURES, vals);
+			xcb_create_gc(conn, gc, pixmaps[i][j], mask, vals);
 
-			xcb_rectangle_t rect = { 0, 0, controls[i].geom.width,
-					controls[i].geom.height };
+			xcb_rectangle_t rect = { 0, 0, w, h };
 			xcb_poly_fill_rectangle_checked(conn, pixmaps[i][j], gc, 1, &rect);
 
 			xcb_free_gc(conn, gc);
+
+			XftFont *font = xfts[controls[i].font_index];
+			char *icon = controls[i].shape_fg;
+			int len = strlen(icon);
+
+			XGlyphInfo ret;
+			XftTextExtentsUtf8(dpy, font, (XftChar8 *)icon, len, &ret);
+			int x = (w - ret.width) / 2;
+			int y = (controls[i].geom.height + font->ascent - font->descent) / 2;
+
+			XftDraw *draw = XftDrawCreate(dpy, pixmaps[i][j], vis_ptr, cm);
+			XftColor fg = xft_color(controls[i].colors[PM_FG(j)]);
+
+			XftDrawStringUtf8(draw, &fg, font, x, y, (XftChar8 *)icon, len);
 		}
 	}
 
@@ -484,6 +557,7 @@ int main(void) {
 	events[XCB_UNMAP_NOTIFY]      = unmap_notify;
 	events[XCB_DESTROY_NOTIFY]    = destroy_notify;
 	events[XCB_ENTER_NOTIFY]      = enter_notify;
+	events[XCB_LEAVE_NOTIFY]      = leave_notify;
 	events[XCB_MAPPING_NOTIFY]    = mapping_notify;
 	events[XCB_EXPOSE]            = expose;
 
@@ -514,48 +588,6 @@ int main(void) {
 	}
 
 	free(tr_reply);
-
-	/*
-
-		WOOOOOOOOOOOoooo
-
-	*/
-
-	/*xcb_window_t test = xcb_generate_id(conn);
-	mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
-	uint32_t vals[5];
-	vals[0] = 0xff000000;
-	vals[1] = 0xff000000;
-	vals[2] = 0;
-	vals[3] = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
-	vals[4] = cm;
-	xcb_create_window(conn, depth, test, scr->root, 200, 200, 200, 200,
-			0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-			vis, mask, vals);
-
-	xcb_map_window(conn, test);
-
-	xcb_pixmap_t pm = xcb_generate_id(conn);
-	xcb_create_pixmap(conn, depth, pm, scr->root, 50, 50);
-
-	xcb_gcontext_t gc = xcb_generate_id(conn);
-	vals[0] = 0xffffffff;
-	vals[1] = 0;
-	xcb_create_gc(conn, gc, pm, XCB_GC_FOREGROUND | XCB_GC_GRAPHICS_EXPOSURES, vals);
-
-	xcb_rectangle_t rect = { 0, 0, 50, 50 };
-	xcb_poly_fill_rectangle_checked(conn, pm, gc, 1, &rect);
-	
-	xcb_copy_area_checked(conn, pm, test, gc, 0, 0, 0, 0, 50, 50);
-
-	xcb_free_gc(conn, gc);
-
-	xcb_flush(conn);*/
-	/*
-
-		PLAAAAAAAAAAAAAAAAaaaaaaap
-	
-	*/
 
 	struct pollfd fd;
 	

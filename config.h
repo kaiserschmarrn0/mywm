@@ -13,7 +13,7 @@
 #define GAP 0
 #define BORDER 0
 
-#define TITLE 16
+#define TITLE 32
 
 #define FOCUSCOL 0xff4d484a
 #define UNFOCUSCOL 0xff302e2f
@@ -26,7 +26,7 @@
 /* rounded corners */
 
 //uncomment for rounded corners
-#define ROUNDED
+//#define ROUNDED
 
 #define RAD 6
 
@@ -36,7 +36,7 @@
 #define SHIFT XCB_MOD_MASK_SHIFT
 
 static const char *fonts[] = {
-	"Font Awesome:size=14:autohint=true:antialias=true"
+	"Font Awesome:size=13:autohint=true:antialias=true"
 };
 
 /* mouse controls */
@@ -55,31 +55,30 @@ static const button close_buttons[] = {
 	{ 0, XCB_BUTTON_INDEX_1, NULL, NULL, close },
 };
 
-static const button maximize_buttons[] = {
+static const button max_buttons[] = {
 	{ 0, XCB_BUTTON_INDEX_1, NULL, NULL, snap_max },
 };
 
+#define OFFSET 0
 static const control controls[] = {
 	{
-		{ 0, 0, TITLE, TITLE }, "\uf004", NULL, close_buttons, LEN(close_buttons),
+		{ OFFSET, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf00d", NULL,
+		close_buttons, LEN(close_buttons), 0,
 		{
-			0xffffffff, 0xffffff00,
-			0xffffffff, 0xff000000,
-			0xffffffff, 0xff000000,
-			0xffffffff, 0xffffff00,
-			0xffffffff, 0xff000000,
-			0xffffffff, 0xff000000,
+			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
+			0xffffff00, 0xff4d484a, //PM_HOVER
+			0xffd7d7d7, 0xff4d484a, //PM_PRESS
+			0xffd7d7d7, 0xff302e2f, //PM_UNFOCUS
 		},
 	},
 	{
-		{ TITLE, 0, TITLE, TITLE }, "\uf004", NULL, maximize_buttons, LEN(maximize_buttons),
-		{
-			0xffffffff, 0xffff0000,
-			0xffffffff, 0xff000000,
-			0xffffffff, 0xff000000,
-			0xffffffff, 0xffff0000,
-			0xffffffff, 0xff000000,
-			0xffffffff, 0xff000000,
+		{ OFFSET + TITLE, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf077", NULL,
+		max_buttons, LEN(max_buttons), 0,
+		{		
+			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
+			0xffd7d7d7, 0xff4d484a, //PM_HOVER
+			0xffd7d7d7, 0xff4d484a, //PM_PRESS
+			0xffd7d7d7, 0xff302e2f, //PM_UNFOCUS
 		},
 	},
 };

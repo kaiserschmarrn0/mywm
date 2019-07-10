@@ -26,6 +26,8 @@ typedef struct window {
 	int sticky;
 
 	xcb_window_t windows[WIN_COUNT + LEN(controls)];
+	int last_pm[LEN(controls)];
+
 	xcb_gcontext_t gc;
 
 	uint32_t geom[4];

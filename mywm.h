@@ -35,12 +35,10 @@ typedef struct {
 } button;
 
 enum {
-	PM_FOCUS_DEFAULT,
-	PM_FOCUS_HOVER,
-	PM_FOCUS_PRESS,
-	PM_UNFOCUS_DEFAULT,
-	PM_UNFOCUS_HOVER,
-	PM_UNFOCUS_PRESS,
+	PM_FOCUS,
+	PM_HOVER,
+	PM_PRESS,
+	PM_UNFOCUS,
 	PM_COUNT
 };
 
@@ -50,29 +48,27 @@ enum {
 enum {
 	COL_FOCUS_FG,
 	COL_FOCUS_BG,
-	COL_FOCUS_FG_HOVER,
-	COL_FOCUS_BG_HOVER,
-	COL_FOCUS_FG_PRESS,
-	COL_FOCUS_BG_PRESS,
+	COL_HOVER_FG,
+	COL_HOVER_BG,
+	COL_PRESS_FG,
+	COL_PRESS_BG,
 	COL_UNFOCUS_FG,
 	COL_UNFOCUS_BG,
-	COL_UNFOCUS_FG_HOVER,
-	COL_UNFOCUS_BG_HOVER,
-	COL_UNFOCUS_FG_PRESS,
-	COL_UNFOCUS_BG_PRESS,
 	COL_COUNT
 };
 
 typedef struct {
 	xcb_rectangle_t geom;
+	uint32_t gravity;
 
 	char *shape_fg;
 	char *shape_bg;
 
 	const button *buttons;
 	int buttons_len;
-	
-	uint32_t colors[12];
+
+	int font_index;
+	uint32_t colors[COL_COUNT];
 } control;
 
 extern xcb_connection_t *conn;

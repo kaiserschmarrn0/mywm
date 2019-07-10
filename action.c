@@ -280,6 +280,19 @@ static void mouse_snap(uint32_t ptr_pos, uint32_t tolerance, void (*snap_x)(void
 	}
 }
 
+typedef struct {
+	xcb_rectangle_t *rects;
+	int num_rects;
+} margin;
+
+static margin margins[] = {
+	{ &(xcb_rectangle_t){ 0, 0, 1920, 1080 }, 1 },
+};
+
+static void create_margins() {
+	
+}
+
 void mouse_move_motion(void *arg) {
 	xcb_motion_notify_event_t *e = (xcb_motion_notify_event_t *)arg;
 	xcb_query_pointer_reply_t *p = w_query_pointer();
