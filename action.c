@@ -97,91 +97,109 @@ void send_ws(void *arg) {
 	stack[curws].fwin = NULL;
 }
 
-static void snap_save_state(window *win) {
+static uint32_t snap_regions[7][4];
+
+void create_snap_regions() {
+	/* ld */
+
+	snap_regions[0][0] = GAP;
+	snap_regions[0][1] = (scr->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP;
+	snap_regions[0][2] = scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2;
+	snap_regions[0][3] = (scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER;
+	
+	/* l */
+
+	snap_regions[1][0] = GAP;
+	snap_regions[1][1] = GAP + TOP;
+	snap_regions[1][2] = scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2;
+	snap_regions[1][3] = scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT;
+
+	/* lu */
+
+	snap_regions[2][0] = GAP;
+	snap_regions[2][1] = GAP + TOP;
+	snap_regions[2][2] = scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2;
+	snap_regions[2][3] = (scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER;
+
+	/* max */
+
+#ifndef SNAP_MAX_SMART
+	snap_regions[3][0] = GAP;
+	snap_regions[3][1] = GAP + TOP;
+	snap_regions[3][2] = scr->width_in_pixels - 2 * GAP - 2 * BORDER;
+	snap_regions[3][3] = scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT;
+#else
+	snap_regions[3][0] = 0;
+	snap_regions[3][1] = TOP;
+	snap_regions[3][2] = scr->width_in_pixels - 2 * GAP - 2 * BORDER;
+	snap_regions[3][3] = scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT;
+#endif
+
+	/* ru */
+
+	snap_regions[4][0] = scr->width_in_pixels / 2 + GAP / 2;
+	snap_regions[4][1] = GAP + TOP;
+	snap_regions[4][2] = scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2;
+	snap_regions[4][3] = (scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER;
+	
+	/* r */
+
+	snap_regions[5][0] = scr->width_in_pixels / 2 + GAP / 2;
+	snap_regions[5][1] = GAP + TOP;
+	snap_regions[5][2] = scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2;
+	snap_regions[5][3] = scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT;
+	
+	/* rd */
+	
+	snap_regions[6][0] = scr->width_in_pixels / 2 + GAP / 2;
+	snap_regions[6][1] = (scr->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP;
+	snap_regions[6][2] = scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2;
+	snap_regions[6][3] = (scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER;
+}
+
+static void snap_save_state(window *win, int index) {
 	save_state(win, win->before_snap);
 	
-	win->is_snap = 1;
+	win->snap_index = index;
 }
 
 static void snap_restore_state(window *win) {
-	win->is_snap = 0;
+	win->snap_index = SNAP_NONE;
 	
 	update_geometry(win, MOVE_RESIZE_MASK, win->before_snap);
 }
 
-#define SNAP_TEMPLATE(A, B, C, D, E) void A(void *arg) {                                          \
-	if (!stack[curws].fwin || stack[curws].fwin->is_e_full || stack[curws].fwin->is_i_full) { \
-		return;                                                                           \
-	}                                                                                         \
-	                                                                                          \
-	if (!stack[curws].fwin->is_snap) {                                                        \
-		snap_save_state(stack[curws].fwin);                                               \
-	}                                                                                         \
-	                                                                                          \
-	uint32_t vals[4];                                                                         \
-	vals[0] = B;                                                                              \
-	vals[1] = C;                                                                              \
-	vals[2] = D;                                                                              \
-	vals[3] = E;                                                                              \
-	update_geometry(stack[curws].fwin, MOVE_RESIZE_MASK, vals);                               \
-	                                                                                          \
-	if (state == MOVE) {                                                                      \
-		return;                                                                           \
-	}                                                                                         \
-	                                                                                          \
-	center_pointer(stack[curws].fwin);                                                        \
-	safe_raise(stack[curws].fwin);                                                            \
+void snap(void *arg) {
+	if (!stack[curws].fwin || stack[curws].fwin->is_e_full || stack[curws].fwin->is_i_full) {
+		return;
+	}
+
+	int index = *(int *)arg;
+	if (stack[curws].fwin->snap_index = SNAP_NONE) {
+		snap_save_state(stack[curws].fwin, index);
+	} 
+
+	update_geometry(stack[curws].fwin, MOVE_RESIZE_MASK, snap_regions[index]);
+
+	if (state == MOVE) {
+		return;
+	}
+
+	center_pointer(stack[curws].fwin);
+	safe_raise(stack[curws].fwin);
 }
 
-#ifndef SNAP_MAX_SMART
-SNAP_TEMPLATE(snap_max,
-	GAP,
-	GAP + TOP,
-	scr->width_in_pixels - 2 * GAP - 2 * BORDER,
-	scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT)
-#else
-SNAP_TEMPLATE(snap_max,
-	0,
-	TOP,
-	scr->width_in_pixels - 2 * BORDER,
-	scr->height_in_pixels - 2 * BORDER - TOP - BOT)
-#endif
+#define snap_macro(A, B) void A(void *arg) { \
+	snap((void *)&(int){ B } );          \
+}
 
-SNAP_TEMPLATE(snap_l,
-	GAP,
-	GAP + TOP,
-	scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2,
-	scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT)
-
-SNAP_TEMPLATE(snap_lu,
-	GAP,
-	GAP + TOP,
-	scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2,
-	(scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER)
-
-SNAP_TEMPLATE(snap_ld,
-	GAP,
-	(scr->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP,
-	scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2,
-	(scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER)
-
-SNAP_TEMPLATE(snap_r,
-	scr->width_in_pixels / 2 + GAP / 2,
-	GAP + TOP,
-	scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2,
-	scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT)
-
-SNAP_TEMPLATE(snap_ru,
-	scr->width_in_pixels / 2 + GAP / 2,
-	GAP + TOP,
-	scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2,
-	(scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER)
-
-SNAP_TEMPLATE(snap_rd,
-	scr->width_in_pixels / 2 + GAP / 2,
-	(scr->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP,
-	scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2,
-	(scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER)
+snap_macro(snap_ld, SNAP_LD);
+snap_macro(snap_l, SNAP_L);
+snap_macro(snap_lu, SNAP_LU);
+snap_macro(snap_u, SNAP_U);
+snap_macro(snap_ru, SNAP_RU);
+snap_macro(snap_r, SNAP_R);
+snap_macro(snap_rd, SNAP_RD);
 
 void int_full(void *arg) {
 	if (!stack[curws].fwin) {
@@ -227,6 +245,13 @@ static void grab_pointer() {
 			XCB_CURRENT_TIME);
 }
 
+/* 
+ * mouse snapping would be better served by a map,
+ * but because of the way X works, we recieve
+ * unwanted enter events when dragging, and must
+ * iterate through all of the regions anyway.
+ */
+
 #define MARGIN 5
 
 typedef struct {
@@ -234,17 +259,18 @@ typedef struct {
 	int rect_count;
 	
 	xcb_window_t win;
-	void (*action)(void *);
+
+	int arg;
 } margin;
 
 static margin margins[] = {
-	{ { }, 2, XCB_WINDOW_NONE, snap_ld  },
-	{ { }, 1, XCB_WINDOW_NONE, snap_l   },
-	{ { }, 2, XCB_WINDOW_NONE, snap_lu  },
-	{ { }, 1, XCB_WINDOW_NONE, snap_max },
-	{ { }, 2, XCB_WINDOW_NONE, snap_ru  },
-	{ { }, 1, XCB_WINDOW_NONE, snap_r   },
-	{ { }, 2, XCB_WINDOW_NONE, snap_rd  },
+	{ { }, 2, XCB_WINDOW_NONE, SNAP_LD  },
+	{ { }, 1, XCB_WINDOW_NONE, SNAP_L   },
+	{ { }, 2, XCB_WINDOW_NONE, SNAP_LU  },
+	{ { }, 1, XCB_WINDOW_NONE, SNAP_U   },
+	{ { }, 2, XCB_WINDOW_NONE, SNAP_RU  },
+	{ { }, 1, XCB_WINDOW_NONE, SNAP_R   },
+	{ { }, 2, XCB_WINDOW_NONE, SNAP_RD  },
 };
 
 static void traverse_margins(void (*func)(int)) {
@@ -375,11 +401,11 @@ static void deactivate_margins() {
 }
 
 static void margin_enter_helper(int i) {
-	margins[i].action(NULL);
+	snap((void *)&margins[i].arg);
 }
 
 static void margin_leave_helper(int i) {
-	if (stack[curws].fwin->is_snap) {
+	if (stack[curws].fwin->snap_index != SNAP_NONE) {
 		snap_restore_state(stack[curws].fwin);
 	}
 }
@@ -416,7 +442,7 @@ void mouse_move(void *arg) {
 		return;
 	}
 
-	if (stack[curws].fwin->is_snap) {
+	if (stack[curws].fwin->snap_index != SNAP_NONE) {
 		x = stack[curws].fwin->before_snap[GEOM_W] *
 				(info->event_x - stack[curws].fwin->geom[GEOM_X]) /
 				stack[curws].fwin->geom[GEOM_W];
@@ -444,7 +470,7 @@ void mouse_resize(void *arg) {
 		return;
 	}
 
-	stack[curws].fwin->is_snap = 0;
+	stack[curws].fwin->snap_index = SNAP_NONE;
 	x = stack[curws].fwin->geom[GEOM_W] - info->event_x;
 	y = stack[curws].fwin->geom[GEOM_H] - info->event_y;
 
@@ -454,16 +480,13 @@ void mouse_resize(void *arg) {
 }
 
 void mouse_move_motion(void *arg) {
-	if (stack[curws].fwin->is_snap) {
+	if (stack[curws].fwin->snap_index != SNAP_NONE) {
 		return;
 	}
-
 
 	xcb_motion_notify_event_t *e = (xcb_motion_notify_event_t *)arg;
 	xcb_query_pointer_reply_t *p = w_query_pointer();
 	
-	printf("%d %d, %d %d\n", p->root_x, p->root_y, x, y);
-
 	uint32_t vals[2];
 	vals[0] = p->root_x - x;
 	vals[1] = p->root_y - y;
@@ -473,13 +496,13 @@ void mouse_move_motion(void *arg) {
 }
 
 void mouse_move_motion_start(void *arg) {
-	if (stack[curws].fwin->is_snap) {
+	if (stack[curws].fwin->snap_index != SNAP_NONE) {
 		snap_restore_state(stack[curws].fwin);
 	}
 
-	events[XCB_MOTION_NOTIFY] = (void (*)(xcb_generic_event_t *))mouse_move_motion;
-
 	mouse_move_motion(NULL);
+	
+	events[XCB_MOTION_NOTIFY] = (void (*)(xcb_generic_event_t *))mouse_move_motion;
 }
 
 void mouse_resize_motion(void *arg) {

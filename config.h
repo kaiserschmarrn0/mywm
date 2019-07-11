@@ -56,14 +56,12 @@ static const button close_buttons[] = {
 };
 
 static const button max_buttons[] = {
-	{ 0, XCB_BUTTON_INDEX_1, NULL, NULL, snap_max },
+	{ 0, XCB_BUTTON_INDEX_1, NULL, NULL, snap_u },
 };
 
-#define OFFSET 0
 static const control controls[] = {
 	{
-		{ OFFSET, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf00d", NULL,
-		close_buttons, LEN(close_buttons), 0,
+		{ 0, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf00d", NULL, close_buttons, 1, 0,
 		{
 			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
 			0xffffff00, 0xff4d484a, //PM_HOVER
@@ -72,8 +70,7 @@ static const control controls[] = {
 		},
 	},
 	{
-		{ OFFSET + TITLE, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf077", NULL,
-		max_buttons, LEN(max_buttons), 0,
+		{ TITLE, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf077", NULL, max_buttons, 1, 0,
 		{		
 			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
 			0xffd7d7d7, 0xff4d484a, //PM_HOVER
@@ -93,7 +90,7 @@ static const keybind keys[] = {
 	{ MOD,         XK_Tab,   cycle,     NULL      },
 	{ MOD,         XK_Left,  snap_l,    NULL      },
 	{ MOD,         XK_Right, snap_r,    NULL      },
-	{ MOD,         XK_f,     snap_max,  NULL      },
+	{ MOD,         XK_f,     snap_u,    NULL      },
 	{ MOD | SHIFT, XK_f,     int_full,  NULL      },
 
 	{ MOD,         XK_1,     change_ws, &(int){0} },

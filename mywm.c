@@ -584,6 +584,7 @@ int main(void) {
 
 	free(tr_reply);
 
+	create_snap_regions();
 	create_margins();
 
 	struct pollfd fd;

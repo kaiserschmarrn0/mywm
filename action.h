@@ -6,13 +6,11 @@ void close(void *arg);
 void cycle(void *arg);
 void stop_cycle();
 
-void snap_l(void *arg);
-void snap_lu(void *arg);
-void snap_ld(void *arg);
+void create_snap_regions();
+void snap(void *arg);
+void snap_u(void *arg);
 void snap_r(void *arg);
-void snap_ru(void *arg);
-void snap_rd(void *arg);
-void snap_max(void *arg);
+void snap_l(void *arg);
 
 void int_full(void *arg);
 

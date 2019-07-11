@@ -8,7 +8,6 @@
 
 enum { DEFAULT, MOVE, RESIZE, CYCLE, };
 
-
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_STATE, WM_COUNT, };
 
 typedef struct {
@@ -24,6 +23,17 @@ typedef struct {
 	uint32_t event_x;
 	uint32_t event_y;
 } press_arg;
+
+enum {
+	SNAP_LD,
+	SNAP_L,
+	SNAP_LU,
+	SNAP_U,
+	SNAP_RU,
+	SNAP_R,
+	SNAP_RD,
+	SNAP_NONE
+};
 
 typedef struct {
 	uint16_t mod;

@@ -258,34 +258,38 @@ void forget_client(window *win, int ws) {
 	refocus(ws);
 }
 
-void update_geometry(window *win, uint32_t mask, uint32_t *vals) {
+void update_geometry(window *win, uint32_t mask, const uint32_t *true_vals) {
 	int p = 0;
 	size_t c = 0;
 	uint32_t child_mask = 0;
+	uint32_t vals[4] = { 0 };
 
-	xcb_configure_window(conn, win->windows[WIN_PARENT], mask, vals);
+	xcb_configure_window(conn, win->windows[WIN_PARENT], mask, true_vals);
 
 	if (mask & XCB_CONFIG_WINDOW_X) {
-		win->geom[0] = vals[p];
+		win->geom[0] = true_vals[p];
+		vals[p] = true_vals[p];
 		p++;
 		c++;
 	}
 
 	if (mask & XCB_CONFIG_WINDOW_Y) {
-		win->geom[1] = vals[p];
+		win->geom[1] = true_vals[p];
+		vals[p] = true_vals[p];
 		p++;
 		c++;
 	}
 
 	if (mask & XCB_CONFIG_WINDOW_WIDTH) {
-		win->geom[2] = vals[p];
+		win->geom[2] = true_vals[p];
+		vals[p] = true_vals[p];
 		child_mask |= XCB_CONFIG_WINDOW_WIDTH;
 		p++;
 	}
 
 	if (mask & XCB_CONFIG_WINDOW_HEIGHT) {
-		win->geom[3] = vals[p];
-		vals[p] -= TITLE;
+		win->geom[3] = true_vals[p];
+		vals[p] = true_vals[p] - TITLE;
 		child_mask |= XCB_CONFIG_WINDOW_HEIGHT;
 		p++;
 	}
@@ -474,7 +478,7 @@ window *new_win(xcb_window_t child) {
 	win->windows[WIN_CHILD] = child;
 	win->ignore_unmap = 0;
 	win->is_roll = 0;
-	win->is_snap = 0;
+	win->snap_index = SNAP_NONE;
 	win->is_e_full = 0;
 	win->is_i_full = 0;
 	win->sticky = 0;

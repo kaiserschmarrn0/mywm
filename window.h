@@ -36,7 +36,7 @@ typedef struct window {
 	int is_roll;
 
 	uint32_t before_snap[4];
-	int is_snap;
+	int snap_index;
 	
 	uint32_t before_full[4];	
 	int is_i_full;
@@ -77,7 +77,7 @@ void ext_full(window *win);
 void free_client(window *subj, int ws);
 void forget_client(window *subj, int ws);
 
-void update_geometry(window *win, uint32_t mask, uint32_t *vals);
+void update_geometry(window *win, uint32_t mask, const uint32_t *true_vals);
 
 void draw_region(window *win, int window_index, int pm_index);
 
