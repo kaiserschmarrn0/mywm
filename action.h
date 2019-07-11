@@ -19,10 +19,15 @@ void int_full(void *arg);
 void change_ws(void *arg);
 void send_ws(void *arg);
 
+void create_margins();
+void margin_leave_handler(xcb_generic_event_t *ev);
+void margin_enter_handler(xcb_generic_event_t *ev);
+
 void mouse_move(void *arg);
 void mouse_resize(void *arg);
 
 void mouse_move_motion(void *arg);
+void mouse_move_motion_start(void *arg);
 void mouse_resize_motion(void *arg);
 
 void button_release(void *arg);

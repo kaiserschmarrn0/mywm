@@ -28,10 +28,18 @@ void center_pointer(window *win) {
 	xcb_warp_pointer(conn, XCB_NONE, win->windows[WIN_CHILD], 0, 0, 0, 0, x, y);
 }
 
-void stack_above(window *win) {
+void stack_above_helper(xcb_window_t win) {
 	uint32_t mask = XCB_CONFIG_WINDOW_STACK_MODE;
 	uint32_t val  = XCB_STACK_MODE_ABOVE;
-	xcb_configure_window(conn, win->windows[WIN_PARENT], mask, &val);
+	xcb_configure_window(conn, win, mask, &val);
+}
+
+void stack_above_abnormal(window *win) {
+	stack_above_helper(win->windows[WIN_CHILD]);
+}
+
+void stack_above(window *win) {
+	stack_above_helper(win->windows[WIN_PARENT]);
 }
 
 void mywm_raise(window *win) {
@@ -60,8 +68,6 @@ void unfocus(window *win) {
 
 	draw_regions(win, PM_UNFOCUS);
 	
-	stack[curws].fwin = NULL;
-
 	ewmh_state(win);
 }
 
@@ -97,8 +103,6 @@ void show_state(window *win) {
 	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win->windows[WIN_CHILD], wm_atoms[WM_STATE], 
 			wm_atoms[WM_STATE], 32, 2, vals);
 	
-	draw_regions(win, PM_FOCUS);
-
 	win->ignore_unmap = 0;
 
 	ewmh_state(win);
@@ -216,37 +220,42 @@ void ext_full(window *subj) {
 	full(stack[curws].fwin);	
 }
 
-void free_client(window *subj, int ws) {
-	if (subj->sticky) {
-		excise_from_all_but(ws, subj);
+void forget_client(window *win, int ws) {
+	if (win->windows[WIN_PARENT] != XCB_WINDOW_NONE) {
+		xcb_generic_error_t *error = NULL;
+		error = xcb_request_check(conn, xcb_reparent_window_checked(conn,
+				win->windows[WIN_CHILD], scr->root, 0, 0));
+
+		if (!error) {
+			xcb_change_save_set(conn, XCB_SET_MODE_DELETE, win->windows[WIN_CHILD]);
+		} else {
+			free(error);
+		}
+
+		xcb_destroy_window(conn, win->windows[WIN_PARENT]);
+	
+		xcb_free_gc(conn, win->gc);
 	}
 
-	excise_from(ws, subj);
+	if ((state == MOVE || state == RESIZE) && win == stack[curws].fwin) {
+		button_release(NULL);
+	}
 
-	xcb_free_gc(conn, subj->gc);
-	free(subj);
+	if (win->sticky) {
+		excise_from_all_but(ws, win);
+	}
+
+	excise_from(ws, win);
+
+	free(win);
 	
-	if (ws != curws || stack[curws].fwin != subj) {
+	if (ws != curws || stack[curws].fwin != win) {
 		return;
 	}
 		
 	stack[ws].fwin = NULL;
 
 	refocus(ws);
-}
-
-void forget_client(window *win, int ws) {
-	xcb_change_save_set(conn, XCB_SET_MODE_DELETE, win->windows[WIN_CHILD]);
-
-	xcb_reparent_window(conn, win->windows[WIN_CHILD], scr->root, 0, 0);
-	xcb_map_window(conn, win->windows[WIN_CHILD]);
-	xcb_destroy_window(conn, win->windows[WIN_PARENT]);
-
-	if ((state == MOVE || state == RESIZE) && win == stack[curws].fwin) {
-		button_release(NULL);
-	}
-
-	free_client(win, ws);	
 }
 
 void update_geometry(window *win, uint32_t mask, uint32_t *vals) {
@@ -336,9 +345,9 @@ static void test_window_type(window *win, xcb_ewmh_get_atoms_reply_t type, int i
 
 	uint32_t mask = XCB_CW_EVENT_MASK;
 	uint32_t val = XCB_EVENT_MASK_STRUCTURE_NOTIFY;
-	xcb_configure_window(conn, win->windows[WIN_PARENT], mask, &val);
+	xcb_change_window_attributes(conn, win->windows[WIN_CHILD], mask, &val);
 
-	xcb_map_window(conn, win->windows[WIN_PARENT]);
+	xcb_map_window(conn, win->windows[WIN_CHILD]);
 }
 
 static void test_window_state(window *win, xcb_ewmh_get_atoms_reply_t type, int i) {
@@ -450,7 +459,9 @@ void make_win_normal(window *win) {
 	
 	xcb_reparent_window(conn, win->windows[WIN_CHILD], win->windows[WIN_PARENT], 0, TITLE);
 
-	if (!state) {
+	show(win);
+
+	if (state != MOVE && state != RESIZE) {
 		focus(win);
 	} else {
 		unfocus(win);
@@ -459,7 +470,7 @@ void make_win_normal(window *win) {
 
 window *new_win(xcb_window_t child) {
 	window *win = malloc(sizeof(window));
-	win->windows[WIN_PARENT] = child;
+	win->windows[WIN_PARENT] = XCB_WINDOW_NONE;
 	win->windows[WIN_CHILD] = child;
 	win->ignore_unmap = 0;
 	win->is_roll = 0;
@@ -479,7 +490,7 @@ window *new_win(xcb_window_t child) {
 	if (win->normal) {
 		make_win_normal(win);
 	}
-	
+
 	insert_into(curws, win);
 
 	return win;

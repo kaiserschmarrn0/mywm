@@ -50,7 +50,9 @@ void normal_events(window *subj);
 
 void center_pointer(window *win);
 
+void stack_above_helper(xcb_window_t win);
 void stack_above(window *subj);
+void stack_above_abnormal(window *win);
 void mywm_raise(window *subj);
 void safe_raise(window *subj);
 

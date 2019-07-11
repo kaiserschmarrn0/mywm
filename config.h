@@ -42,12 +42,12 @@ static const char *fonts[] = {
 /* mouse controls */
 
 static const button grab_buttons[] = {
-	{ MOD, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion,   button_release },
+	{ MOD, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion_start,   button_release },
 	{ MOD, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, button_release },
 };
 
 static const button parent_buttons[] = {
-	{ 0, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion,   button_release },
+	{ 0, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion_start,   button_release },
 	{ 0, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, button_release },
 };
 

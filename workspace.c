@@ -44,15 +44,14 @@ static void insert_into_helper(int ws, int type, window *win) {
 }
 
 void insert_into(int ws, window *win) {
-	stack_above(win);
-	
 	insert_into_helper(ws, TYPE_ALL, win);
 
 	if (win->normal) {
+		stack_above(win);
 		insert_into_helper(ws, TYPE_NORMAL, win);
+	} else {
+		stack_above_abnormal(win);
 	}
-
-	print_stack(ws, TYPE_ALL);
 
 	if (win->above) {
 		insert_into_helper(ws, TYPE_ABOVE, win);
@@ -74,7 +73,6 @@ static void excise_from_helper(int ws, int type, window *subj) {
 }
 
 void excise_from(int ws, window *win) {
-	/*printf("excised: %x\n", win->windows[WIN_CHILD]); meh */
 	if (win->normal) {
 		excise_from_helper(ws, TYPE_NORMAL, win);
 	}

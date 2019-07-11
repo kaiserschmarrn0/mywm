@@ -17,6 +17,7 @@
 #include "window.h"
 #include "workspace.h"
 #include "rounded.h"
+#include "action.h"
 
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT, };
 
@@ -53,14 +54,6 @@ static void ignore_unmap(window *subj) {
 
 	xcb_unmap_window(conn, subj->windows[WIN_PARENT]);
 	subj->ignore_unmap = 1;
-}
-
-static void map(window *subj) {
-	if (subj->sticky || !subj->normal) {
-		return;
-	}
-
-	xcb_map_window(conn, subj->windows[WIN_PARENT]);
 }
 
 xcb_query_pointer_reply_t *w_query_pointer() {
@@ -134,34 +127,37 @@ static void map_request(xcb_generic_event_t *ev) {
 		return;
 	}
 
-	window *win = new_win(e->window);
-
-	show(win);
+	new_win(e->window);
 }
 
 static void enter_notify(xcb_generic_event_t *ev) {
 	xcb_enter_notify_event_t *e = (xcb_enter_notify_event_t *)ev;
+
 	window *found = search_ws(curws, TYPE_NORMAL, WIN_PARENT, e->event);
-	if (found && found->normal) {
+	if (found && found->normal && found != stack[curws].fwin && state != MOVE) {
 		focus(found);
 		return;
 	}
-
+	
 	search_data data = search_range(curws, TYPE_NORMAL, WIN_COUNT, REGION_COUNT, e->event);
 	if (data.win) {
-		printf("hovering\n");
 		draw_region(data.win, data.index, PM_HOVER);
+		return;
 	}
+
+	margin_enter_handler(ev);
 }
 
 static void leave_notify(xcb_generic_event_t *ev) {
-	xcb_leave_notify_event_t *e = (xcb_enter_notify_event_t *)ev;
+	xcb_leave_notify_event_t *e = (xcb_leave_notify_event_t *)ev;
 
 	search_data data = search_range(curws, TYPE_NORMAL, WIN_COUNT, REGION_COUNT, e->event);
 	if (data.win) {
-		printf("leaving\n");
 		draw_region(data.win, data.index, PM_FOCUS);
+		return;
 	}
+	
+	margin_leave_handler(ev);
 }
 
 static int button_press_helper(xcb_button_press_event_t *e, int len, const button list[],
@@ -250,7 +246,7 @@ static void destroy_notify(xcb_generic_event_t *ev) {
 	window *found = search_all(&ws, TYPE_ALL, WIN_CHILD, e->window);
 	
 	if (found) {
-		free_client(found, ws);
+		forget_client(found, ws);
 	}
 }
 
@@ -377,7 +373,7 @@ static void expose(xcb_generic_event_t *ev) {
 	if (!data.win) {
 		return;
 	}
-	
+
 	draw_region(data.win, data.index, data.win->last_pm[data.index - WIN_COUNT]);
 }
 
@@ -582,12 +578,13 @@ int main(void) {
 		}
 
 		window *cur = new_win(children[i]);
-		show(cur);
 
 		cur->ignore_unmap = 1;
 	}
 
 	free(tr_reply);
+
+	create_margins();
 
 	struct pollfd fd;
 	
@@ -604,7 +601,10 @@ int main(void) {
 
 		while(ev = xcb_poll_for_event(conn)) {
 			if (ev->response_type == 0) {
-				printf("error\n");
+				xcb_generic_error_t *error = (xcb_generic_error_t *) ev;
+				printf("mywm: error:\n\terror_code: %d\n\tmajor_code: "
+						"%d\n\tminor_code: %d\n", error->error_code,
+						error->major_code, error->minor_code);
 			}
 
 			if (events[ev->response_type & ~0x80]) {
