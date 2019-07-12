@@ -130,11 +130,11 @@ static void map_request(xcb_generic_event_t *ev) {
 	new_win(e->window);
 }
 
-static void enter_notify(xcb_generic_event_t *ev) {
+void enter_notify(xcb_generic_event_t *ev) {
 	xcb_enter_notify_event_t *e = (xcb_enter_notify_event_t *)ev;
 
 	window *found = search_ws(curws, TYPE_NORMAL, WIN_PARENT, e->event);
-	if (found && found->normal && found != stack[curws].fwin && state != MOVE) {
+	if (state != RESIZE && found && found->normal && found != stack[curws].fwin && state != MOVE) {
 		focus(found);
 		return;
 	}
@@ -148,15 +148,22 @@ static void enter_notify(xcb_generic_event_t *ev) {
 	margin_enter_handler(ev);
 }
 
-static void leave_notify(xcb_generic_event_t *ev) {
+void leave_notify(xcb_generic_event_t *ev) {
 	xcb_leave_notify_event_t *e = (xcb_leave_notify_event_t *)ev;
 
+	//printf("left %d, mode: %d, detail: %d, state: %d\n", e->event, e->mode, e->detail, e->state);
+
 	search_data data = search_range(curws, TYPE_NORMAL, WIN_COUNT, REGION_COUNT, e->event);
-	if (data.win) {
+	if (data.win && e->mode == XCB_NOTIFY_MODE_NORMAL) {
+		if (state == PRESS) {
+			region_abort();
+		}
+
 		draw_region(data.win, data.index, PM_FOCUS);
+
 		return;
 	}
-	
+
 	margin_leave_handler(ev);
 }
 
@@ -181,6 +188,7 @@ static void button_press(xcb_generic_event_t *ev) {
 
 	for (int i = WIN_COUNT; i < REGION_COUNT; i++) {
 		if (stack[curws].fwin->windows[i] == e->child) {
+			draw_region(stack[curws].fwin, i, PM_PRESS);
 			button_press_helper(e, controls[i - WIN_COUNT].buttons_len,
 					controls[i - WIN_COUNT].buttons, e->event,
 					e->event_x, e->event_y);

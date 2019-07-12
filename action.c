@@ -175,9 +175,16 @@ void snap(void *arg) {
 	}
 
 	int index = *(int *)arg;
-	if (stack[curws].fwin->snap_index = SNAP_NONE) {
+	if (index == stack[curws].fwin->snap_index) {
+		snap_restore_state(stack[curws].fwin);
+		return;
+	}
+
+	if (stack[curws].fwin->snap_index == SNAP_NONE) {
 		snap_save_state(stack[curws].fwin, index);
-	} 
+	} else {
+		stack[curws].fwin->snap_index = index;
+	}
 
 	update_geometry(stack[curws].fwin, MOVE_RESIZE_MASK, snap_regions[index]);
 
@@ -185,7 +192,6 @@ void snap(void *arg) {
 		return;
 	}
 
-	center_pointer(stack[curws].fwin);
 	safe_raise(stack[curws].fwin);
 }
 
@@ -243,6 +249,37 @@ static void grab_pointer() {
 	uint32_t type = XCB_GRAB_MODE_ASYNC;
 	xcb_grab_pointer(conn, 1, scr->root, mask, type, type, scr->root, XCB_NONE,
 			XCB_CURRENT_TIME);
+}
+
+void region_press(void *arg) {
+	state = PRESS;
+	grab_pointer();
+}
+
+void region_abort() {
+	state = DEFAULT;
+
+	events[XCB_BUTTON_RELEASE] = NULL;
+
+	xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
+}
+
+void region_release_helper(void (*action)(void *), void *arg) {
+	region_abort();	
+
+	action(arg);
+}
+
+void region_leave_handler(xcb_leave_notify_event_t *ev) {
+	
+}
+
+void region_close(void *arg) {
+	region_release_helper(close, arg);
+}
+
+void region_snap_u(void *arg) {
+	region_release_helper(snap_u, arg);
 }
 
 /* 
@@ -470,6 +507,9 @@ void mouse_resize(void *arg) {
 		return;
 	}
 
+	events[XCB_ENTER_NOTIFY] = NULL;
+	events[XCB_LEAVE_NOTIFY] = NULL;
+
 	stack[curws].fwin->snap_index = SNAP_NONE;
 	x = stack[curws].fwin->geom[GEOM_W] - info->event_x;
 	y = stack[curws].fwin->geom[GEOM_H] - info->event_y;
@@ -525,6 +565,13 @@ void button_release(void *arg) {
 
 	events[XCB_MOTION_NOTIFY] = NULL; //jic
 	events[XCB_BUTTON_RELEASE] = NULL; //jic
+}
+
+void resize_release(void *arg) {
+	button_release(arg);
+
+	events[XCB_ENTER_NOTIFY] = enter_notify;
+	events[XCB_LEAVE_NOTIFY] = leave_notify;
 }
 
 void mouse_roll_up(void *arg) {

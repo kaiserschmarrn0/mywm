@@ -6,7 +6,7 @@
 
 #define LEN(A) sizeof(A)/sizeof(*A)
 
-enum { DEFAULT, MOVE, RESIZE, CYCLE, };
+enum { DEFAULT, MOVE, RESIZE, CYCLE, PRESS };
 
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_STATE, WM_COUNT, };
 
@@ -99,5 +99,9 @@ extern void (*events[XCB_NO_OPERATION])(xcb_generic_event_t *event);
 //shared utilities
 xcb_query_pointer_reply_t *w_query_pointer();
 void close_helper(xcb_window_t win);
+
+void enter_notify(xcb_generic_event_t *ev);
+void leave_notify(xcb_generic_event_t *ev);
+
 
 #endif

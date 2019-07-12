@@ -1,5 +1,5 @@
 SRC = mywm.c workspace.c window.c rounded.c action.c
-OBJ = $(SRC:.c=.o)
+OBJ = mywm.o workspace.o window.o rounded.o action.o
 
 PREFIX = /usr/local
 

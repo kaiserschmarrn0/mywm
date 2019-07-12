@@ -29,6 +29,12 @@ void mouse_move_motion_start(void *arg);
 void mouse_resize_motion(void *arg);
 
 void button_release(void *arg);
+void resize_release(void *arg);
+
+void region_press(void *arg);
+void region_close(void *arg);
+void region_snap_u(void *arg);
+void region_abort();
 
 void mouse_roll_up(void *arg);
 void mouse_roll_down(void *arg);

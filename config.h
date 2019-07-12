@@ -43,20 +43,20 @@ static const char *fonts[] = {
 
 static const button grab_buttons[] = {
 	{ MOD, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion_start,   button_release },
-	{ MOD, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, button_release },
+	{ MOD, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, resize_release },
 };
 
 static const button parent_buttons[] = {
 	{ 0, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion_start,   button_release },
-	{ 0, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, button_release },
+	{ 0, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, resize_release },
 };
 
 static const button close_buttons[] = {
-	{ 0, XCB_BUTTON_INDEX_1, NULL, NULL, close },
+	{ 0, XCB_BUTTON_INDEX_1, region_press, NULL, region_close },
 };
 
 static const button max_buttons[] = {
-	{ 0, XCB_BUTTON_INDEX_1, NULL, NULL, snap_u },
+	{ 0, XCB_BUTTON_INDEX_1, region_press, NULL, region_snap_u },
 };
 
 static const control controls[] = {
@@ -64,8 +64,8 @@ static const control controls[] = {
 		{ 0, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf00d", NULL, close_buttons, 1, 0,
 		{
 			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
-			0xffffff00, 0xff4d484a, //PM_HOVER
-			0xffd7d7d7, 0xff4d484a, //PM_PRESS
+			0xffff3b30, 0xff4d484a, //PM_HOVER
+			0xff4d484a, 0xffff3b30, //PM_PRESS
 			0xffd7d7d7, 0xff302e2f, //PM_UNFOCUS
 		},
 	},
@@ -73,8 +73,8 @@ static const control controls[] = {
 		{ TITLE, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf077", NULL, max_buttons, 1, 0,
 		{		
 			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
-			0xffd7d7d7, 0xff4d484a, //PM_HOVER
-			0xffd7d7d7, 0xff4d484a, //PM_PRESS
+			0xff28cd41, 0xff4d484a, //PM_HOVER
+			0xff4d484a, 0xff28cd41, //PM_PRESS
 			0xffd7d7d7, 0xff302e2f, //PM_UNFOCUS
 		},
 	},
