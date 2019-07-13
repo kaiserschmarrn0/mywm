@@ -31,16 +31,140 @@ void close(void *arg) {
 }
 
 static void cycle_raise(window *cur) {
-	for (; cur != stack[curws].fwin;) {
+	window *last = stack[curws].lists[TYPE_NORMAL];
+	for (; cur != last;) {
+		printf("raised\n");
 		window *temp = cur->prev[curws][TYPE_NORMAL];
 		mywm_raise(cur); 
 		cur = temp;
 	}
 }
 
+static void start_cycle(void);
+static void cycle_iterate(void);
+
+static void (*cycle_handler)(void) = start_cycle;
+
+static void cycle_iterate_restart(void);
+static void cycle_iterate_subsequent(void);
+
+static void (*cycle_iterate_helper)(void) = cycle_iterate_subsequent;
+
+static void cycle_iterate_subsequent(void) {
+	printf("cycle_iterate_subsequent\n");
+	window *temp = marker;
+	marker = marker->next[curws][TYPE_NORMAL];
+
+	cycle_raise(temp);
+
+	mywm_raise(temp);
+	center_pointer(temp);
+	focus(temp);
+}
+
+static void cycle_iterate_restart(void) {
+	printf("cycle_iterate_restart\n");
+	mywm_lower(stack[curws].lists[TYPE_NORMAL]);
+
+	cycle_iterate_subsequent();
+	
+	cycle_iterate_helper = cycle_iterate_subsequent;	
+}
+
+static void cycle_iterate(void) {
+	/*window *temp = marker;
+	marker = marker->next[curws][TYPE_NORMAL];
+
+	cycle_raise(temp);
+
+	mywm_raise(temp);
+	center_pointer(temp);
+	focus(temp);*/
+
+	//cycle_handler = cycle_iterate();
+
+	if (marker->next[curws][TYPE_NORMAL]) {
+		/*if (marker = stack[curws].lists[TYPE_NORMAL]->next[curws][TYPE_NORMAL]) {
+			mywm_lower(stack[curws].lists[TYPE_NORMAL]);
+		}
+
+		window *temp = marker;
+		marker = marker->next[curws][TYPE_NORMAL];
+
+		cycle_raise(temp);
+
+		mywm_raise(temp);
+		center_pointer(temp);
+		focus(temp);*/
+		cycle_iterate_helper();
+	} else {
+		printf("cycle_iterate_last\n");
+		cycle_raise(marker);
+		
+		window *temp = marker;
+		marker = stack[curws].lists[TYPE_NORMAL];
+
+		mywm_raise(temp);
+		center_pointer(temp);
+		focus(temp);
+
+		cycle_iterate_helper = cycle_iterate_restart;
+	}
+}
+
+static void start_cycle() {
+	printf("start_cycle\n");
+	events[XCB_ENTER_NOTIFY] = NULL;
+	
+	state = CYCLE;
+	traverse(curws, TYPE_NORMAL, release_events);
+
+	/*if (stack[curws].fwin->next[curws][TYPE_NORMAL]) {
+		marker = stack[curws].fwin;
+	} else {
+		marker = stack[curws].lists[TYPE_NORMAL];
+	}*/
+
+	if (stack[curws].fwin == stack[curws].lists[TYPE_NORMAL]) {
+		marker = stack[curws].fwin->next[curws][TYPE_NORMAL];
+	} else {
+		marker = stack[curws].fwin;
+	}
+
+	cycle_handler = cycle_iterate;
+	//cycle_iterate();
+
+	if (marker->next[curws][TYPE_NORMAL]) {
+		//subsequent
+
+		window *temp = marker;
+		marker = marker->next[curws][TYPE_NORMAL];
+	
+		//cycle_raise(temp);
+
+		mywm_raise(temp);
+		center_pointer(temp);
+		focus(temp);
+	} else {
+		window *temp = marker;
+		marker = stack[curws].lists[TYPE_NORMAL];
+
+		mywm_raise(temp);
+		center_pointer(temp);
+		focus(temp);
+
+		cycle_iterate_helper = cycle_iterate_restart;
+	}
+}
+
 void stop_cycle() {
+	printf("stop_cycle\n");
 	state = DEFAULT;
-	traverse(curws, TYPE_NORMAL, normal_events); 
+	events[XCB_ENTER_NOTIFY] = enter_notify;
+	traverse(curws, TYPE_NORMAL, reset_events); 
+
+	cycle_handler = start_cycle;
+	cycle_iterate_helper = cycle_iterate_subsequent;
 }
 
 void cycle(void *arg) {
@@ -49,22 +173,20 @@ void cycle(void *arg) {
 		return;
 	}
 
-	if (state != CYCLE) {
-		traverse(curws, TYPE_NORMAL, release_events);
-		marker = stack[curws].fwin;
-		state = CYCLE;
-	}
+	cycle_handler();
 
-	if (marker->next[curws][TYPE_NORMAL]) {
-		cycle_raise(marker);
-		marker = stack[curws].fwin;
-		center_pointer(marker->next[curws][TYPE_NORMAL]);
-		mywm_raise(marker->next[curws][TYPE_NORMAL]);
+	/*if (marker->next[curws][TYPE_NORMAL]) {
+		cycle_iterate();
 	} else {
 		cycle_raise(marker);
-		center_pointer(stack[curws].lists[TYPE_NORMAL]);
-		marker = stack[curws].fwin;
-	}
+		
+		window *temp = marker;
+		marker = stack[curws].lists[TYPE_NORMAL];
+
+		mywm_raise(temp);
+		center_pointer(temp);
+		focus(temp);
+	}*/
 }
 
 void change_ws(void *arg) {
@@ -95,6 +217,8 @@ void send_ws(void *arg) {
 	excise_from(curws, stack[curws].fwin);
 	insert_into(new_ws, stack[curws].fwin);
 	stack[curws].fwin = NULL;
+
+	refocus(curws);
 }
 
 static uint32_t snap_regions[7][4];

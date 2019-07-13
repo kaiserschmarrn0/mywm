@@ -1,11 +1,11 @@
 #include "workspace.h"
 #include "window.h"
 
-workspace stack[NUM_WS] = { { { NULL }, NULL } };
+workspace stack[NUM_WS] = { { { NULL }, { NULL }, NULL } };
 int curws = 0;
 
 void print_stack(int ws, int type) {
-	printf("workspace %x [%x]: ", ws, stack[ws].lists[type]);
+	printf("workspace %x [fwin: %x]: ", ws, stack[ws].fwin ? stack[ws].fwin->windows[WIN_CHILD] : 0);
 	for (window *list = stack[ws].lists[type]; list; list = list->next[ws][type]) {
 		printf("win %x -> ", list->windows[WIN_CHILD]);
 	}
@@ -38,6 +38,8 @@ static void insert_into_helper(int ws, int type, window *win) {
 
 	if (stack[ws].lists[type]) {
 		stack[ws].lists[type]->prev[ws][type] = win;
+	} else {
+		stack[ws].last[type] = win;
 	}
 
 	stack[ws].lists[type] = win;
@@ -52,7 +54,7 @@ void insert_into(int ws, window *win) {
 	} else {
 		stack_above_abnormal(win);
 	}
-
+	
 	if (win->above) {
 		insert_into_helper(ws, TYPE_ABOVE, win);
 	} else if (!win->is_i_full && !win->is_e_full) {
@@ -60,9 +62,41 @@ void insert_into(int ws, window *win) {
 	}
 }
 
+void append_to_helper(int ws, int type, window *win) {
+	win->prev[ws][type] = stack[ws].last[type];
+	win->next[ws][type] = NULL;
+
+	if (stack[ws].last[type]) {
+		stack[ws].last[type]->next[ws][type] = win;
+	} else {
+		stack[ws].lists[type] = win;
+	}
+
+	stack[ws].last[type] = win;
+}
+
+void append_to(int ws, window *win) {
+	append_to_helper(ws, TYPE_ALL, win);
+
+	if (win->normal) {
+		stack_below(win);
+		append_to_helper(ws, TYPE_NORMAL, win);
+	} else {
+		stack_below_abnormal(win);
+	}
+
+	if (win->above) {
+		fprintf(stderr, "mywm: can't append always-above windows.\n");
+	} else {
+		//handle always-below :^)
+	}
+}
+
 static void excise_from_helper(int ws, int type, window *subj) {
 	if (subj->next[ws][type]) {
 		subj->next[ws][type]->prev[ws][type] = subj->prev[ws][type];
+	} else {
+		stack[ws].last[type] = subj->prev[ws][type];
 	}
 	
 	if (subj->prev[ws][type]) {

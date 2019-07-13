@@ -9,14 +9,15 @@
 #define NUM_WS 4
 
 #define TOP 0
-#define BOT 28
+#define BOT 0
 #define GAP 0
 #define BORDER 0
 
 #define TITLE 32
 
 #define FOCUSCOL 0xff4d484a
-#define UNFOCUSCOL 0xff302e2f
+//#define UNFOCUSCOL 0xff302e2f
+#define UNFOCUSCOL 0xff242223
 
 #define SNAP_MARGIN 5
 #define SNAP_CORNER 256
@@ -66,7 +67,7 @@ static const control controls[] = {
 			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
 			0xffff3b30, 0xff4d484a, //PM_HOVER
 			0xff4d484a, 0xffff3b30, //PM_PRESS
-			0xffd7d7d7, 0xff302e2f, //PM_UNFOCUS
+			0xffd7d7d7, UNFOCUSCOL, //PM_UNFOCUS
 		},
 	},
 	{
@@ -75,7 +76,7 @@ static const control controls[] = {
 			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
 			0xff28cd41, 0xff4d484a, //PM_HOVER
 			0xff4d484a, 0xff28cd41, //PM_PRESS
-			0xffd7d7d7, 0xff302e2f, //PM_UNFOCUS
+			0xffd7d7d7, UNFOCUSCOL, //PM_UNFOCUS
 		},
 	},
 };

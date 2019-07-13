@@ -12,8 +12,14 @@
 
 void release_events(window *subj) {
 	uint32_t mask = XCB_CW_EVENT_MASK;
-	uint32_t val = PARENT_EVENTS | XCB_EVENT_MASK_KEY_RELEASE;
-	xcb_change_window_attributes(conn, subj->windows[WIN_PARENT], mask, &val); 
+	uint32_t val = XCB_EVENT_MASK_KEY_RELEASE | XCB_EVENT_MASK_PROPERTY_CHANGE;
+	xcb_change_window_attributes(conn, subj->windows[WIN_CHILD], mask, &val); 
+}
+
+void reset_events(window *subj) {
+	uint32_t mask = XCB_CW_EVENT_MASK;
+	uint32_t val = XCB_EVENT_MASK_PROPERTY_CHANGE;
+	xcb_change_window_attributes(conn, subj->windows[WIN_CHILD], mask, &val);
 }
 
 void normal_events(window *subj) {
@@ -34,6 +40,20 @@ void stack_above_helper(xcb_window_t win) {
 	xcb_configure_window(conn, win, mask, &val);
 }
 
+void stack_below_helper(xcb_window_t win) {
+	uint32_t mask = XCB_CONFIG_WINDOW_STACK_MODE;
+	uint32_t val  = XCB_STACK_MODE_BELOW;
+	xcb_configure_window(conn, win, mask, &val);
+}
+
+void stack_below_abnormal(window *win) {
+	stack_below_helper(win->windows[WIN_CHILD]);
+}
+
+void stack_below(window *win) {
+	stack_below_helper(win->windows[WIN_PARENT]);
+}
+
 void stack_above_abnormal(window *win) {
 	stack_above_helper(win->windows[WIN_CHILD]);
 }
@@ -45,6 +65,11 @@ void stack_above(window *win) {
 void mywm_raise(window *win) {
 	excise_from(curws, win);
 	insert_into(curws, win);
+}
+
+void mywm_lower(window *win) {
+	excise_from(curws, win);
+	append_to(curws, win);
 }
 
 void safe_raise(window *win) {

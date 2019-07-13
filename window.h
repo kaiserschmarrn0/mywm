@@ -47,13 +47,19 @@ typedef struct window {
 
 void release_events(window *subj);
 void normal_events(window *subj);
+void reset_events(window *subj);
 
 void center_pointer(window *win);
 
 void stack_above_helper(xcb_window_t win);
 void stack_above(window *subj);
 void stack_above_abnormal(window *win);
+
+void stack_below(window *win);
+void stack_below_abnormal(window *win);
+
 void mywm_raise(window *subj);
+void mywm_lower(window *win);
 void safe_raise(window *subj);
 
 void focus(window *subj);

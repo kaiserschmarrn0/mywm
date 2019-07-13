@@ -541,6 +541,7 @@ int main(void) {
 	};
 
 	xcb_ewmh_set_supported(ewmh, 0, LEN(supported_atoms), supported_atoms);
+	xcb_ewmh_set_wm_name(ewmh, scr->root, 4, "mywm");
 	
 	mask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE;
 	for (int i = 0; i < LEN(grab_buttons); i++) {
