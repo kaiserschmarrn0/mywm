@@ -2,9 +2,9 @@
 
 mywm - my window manager
 ---------------------------------------------------------------------------------
-mywm is an experimental reparenting window manager
+mywm is a small reparenting window manager
 
-it aims for a reparenting infrastructure simple enough to be intuitively extensible
+it's meant to be easily modified
 
 requirements
 ---------------------------------------------------------------------------------
@@ -17,9 +17,3 @@ installation
 install using 
 
 	make install clean
-
-todo
----------------------------------------------------------------------------------
-better infrastructure for state altering actions
-
-util.c, util.h?
