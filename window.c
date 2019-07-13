@@ -269,7 +269,7 @@ void forget_client(window *win, int ws) {
 	if (win->sticky) {
 		excise_from_all_but(ws, win);
 	}
-
+	
 	excise_from(ws, win);
 
 	free(win);
@@ -277,7 +277,7 @@ void forget_client(window *win, int ws) {
 	if (ws != curws || stack[curws].fwin != win) {
 		return;
 	}
-		
+	
 	stack[ws].fwin = NULL;
 
 	refocus(ws);

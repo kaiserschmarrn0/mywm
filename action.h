@@ -3,8 +3,10 @@
 
 void stick(void *arg);
 void close(void *arg);
-void cycle(void *arg);
-void stop_cycle();
+//void cycle(void *arg);
+//void stop_cycle();
+void select_window_terminate(void);
+void select_window(void *arg);
 
 void create_snap_regions();
 void snap(void *arg);

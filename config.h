@@ -88,7 +88,7 @@ extern xcb_pixmap_t pixmaps[LEN(controls)][PM_COUNT]; //ree
 static const keybind keys[] = {
 	{ MOD,         XK_q,     close,     NULL      },
 	{ MOD,         XK_s,     stick,     NULL      },
-	{ MOD,         XK_Tab,   cycle,     NULL      },
+	{ MOD,         XK_Tab,   select_window,     NULL      },
 	{ MOD,         XK_Left,  snap_l,    NULL      },
 	{ MOD,         XK_Right, snap_r,    NULL      },
 	{ MOD,         XK_f,     snap_u,    NULL      },

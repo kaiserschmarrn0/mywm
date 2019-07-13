@@ -210,8 +210,8 @@ static void key_press(xcb_generic_event_t *ev) {
 	xcb_key_press_event_t *e = (xcb_key_press_event_t *)ev;
 	xcb_keysym_t keysym = xcb_key_symbols_get_keysym(keysyms, e->detail, 0);
 
-	if (keysym != XK_Tab && state == CYCLE) {
-		stop_cycle();
+	if (keysym != XK_Tab && state == SELECT_WINDOW) {
+		select_window_terminate();
 	}
 
 	for (int i = 0; i < LEN(keys); i++) {
@@ -226,8 +226,8 @@ static void key_release(xcb_generic_event_t *ev) {
 	xcb_key_release_event_t *e = (xcb_key_release_event_t *)ev;
 	xcb_keysym_t keysym = xcb_key_symbols_get_keysym(keysyms, e->detail, 0);
 
-	if (keysym == XK_Super_L && state == CYCLE) {
-		stop_cycle();
+	if (keysym == XK_Super_L && state == SELECT_WINDOW) {
+		select_window_terminate();
 	}
 }
 
@@ -343,13 +343,12 @@ static void configure_request(xcb_generic_event_t *ev) {
 	}
 }
 
-static void cleanup(window *win) {
-	forget_client(win, curws);
-}
-
 static void die() {
-	for (curws = 0; curws < NUM_WS; curws++) {
-		safe_traverse(curws, TYPE_ALL, cleanup);
+	//no need to preserve stack, could refactor forget_client
+	for (int i = 0; i < NUM_WS; i++) {
+		for (int j = 0; j < stack[i].count[TYPE_ALL]; j++) {
+			forget_client(stack[i].lists[TYPE_ALL], i);
+		}
 	}
 
 	xcb_ungrab_key(conn, XCB_GRAB_ANY, scr->root, XCB_MOD_MASK_ANY);
@@ -360,11 +359,11 @@ static void die() {
 			xcb_free_pixmap(conn, pixmaps[i][j]);
 		}
 	}
-
+	
 	for (int i = 0; i < LEN(fonts); i++) {
 		XftFontClose(dpy, xfts[i]);
 	}
-
+	
 	xcb_flush(conn);
 
 	xcb_disconnect(conn);

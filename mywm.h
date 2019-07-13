@@ -6,7 +6,7 @@
 
 #define LEN(A) sizeof(A)/sizeof(*A)
 
-enum { DEFAULT, MOVE, RESIZE, CYCLE, PRESS };
+enum { DEFAULT, MOVE, RESIZE, SELECT_WINDOW, PRESS };
 
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_STATE, WM_COUNT, };
 

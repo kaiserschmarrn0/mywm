@@ -1,7 +1,7 @@
 #include "workspace.h"
 #include "window.h"
 
-workspace stack[NUM_WS] = { { { NULL }, { NULL }, NULL } };
+workspace stack[NUM_WS] = { { { NULL }, { NULL }, { 0 }, NULL } };
 int curws = 0;
 
 void print_stack(int ws, int type) {
@@ -26,9 +26,9 @@ void traverse(int ws, int type, void (*func)(window *)) {
 
 void safe_traverse(int ws, int type, void (*func)(window *)) {
 	for (window *list = stack[ws].lists[type]; list;) {
-		window *temp = list;
-		list = temp->next[ws][type];
-		func(temp);
+		window *temp = list->next[ws][type];
+		func(list);
+		list = temp;
 	}
 }
 
@@ -43,6 +43,8 @@ static void insert_into_helper(int ws, int type, window *win) {
 	}
 
 	stack[ws].lists[type] = win;
+	
+	stack[ws].count[type]++;
 }
 
 void insert_into(int ws, window *win) {
@@ -73,6 +75,8 @@ void append_to_helper(int ws, int type, window *win) {
 	}
 
 	stack[ws].last[type] = win;
+	
+	stack[ws].count[type]++;
 }
 
 void append_to(int ws, window *win) {
@@ -87,6 +91,7 @@ void append_to(int ws, window *win) {
 
 	if (win->above) {
 		fprintf(stderr, "mywm: can't append always-above windows.\n");
+		return;
 	} else {
 		//handle always-below :^)
 	}
@@ -104,6 +109,8 @@ static void excise_from_helper(int ws, int type, window *subj) {
 	} else {
 		stack[ws].lists[type] = subj->next[ws][type];
 	}
+	
+	stack[ws].count[type]--;
 }
 
 void excise_from(int ws, window *win) {

@@ -10,6 +10,8 @@ typedef struct workspace {
 	window *lists[TYPE_COUNT];
 	window *last[TYPE_COUNT];
 
+	int count[TYPE_COUNT];
+
 	window *fwin;
 } workspace;
 

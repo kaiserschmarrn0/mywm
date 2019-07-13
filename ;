@@ -30,67 +30,124 @@ void close(void *arg) {
 	forget_client(stack[curws].fwin, curws);
 }
 
-static void select_window_init(void);
+/*static void start_cycle(void);
+static void cycle_iterate(void);
+static void cycle_iterate_restart(void);
+static void cycle_iterate_subsequent(void);
 
-static void (*select_window_handler)(void) = select_window_init;
-static window **select_window_list = NULL;
-static unsigned int select_window_index = 0;
+static void (*cycle_handler)(void) = start_cycle;
+static void (*cycle_iterate_helper)(void) = cycle_iterate_subsequent;
 
-static void select_window_iterate(void) {
-	for (int i = select_window_index; i >= 0; i--) {
-		mywm_raise(select_window_list[i]);
+static void cycle_raise(window *cur) {
+	window *last = stack[curws].lists[TYPE_NORMAL];
+	for (; cur != last;) {
+		window *temp = cur->prev[curws][TYPE_NORMAL];
+		mywm_raise(cur); 
+		cur = temp;
 	}
-
-	unsigned int new_index = select_window_index + 1;
-	if (new_index < stack[curws].count[TYPE_NORMAL]) {
-		select_window_index = new_index;
-	} else {
-		select_window_index = 0;
-	}
-
-	window *win = select_window_list[select_window_index];
-	mywm_raise(win);
-	center_pointer(win);
-	focus(win);
 }
 
-static void select_window_init(void) {
-	state = SELECT_WINDOW;
+static void cycle_iterate_subsequent_helper(window *temp) {
+	mywm_raise(temp);
+	center_pointer(temp);
+	focus(temp);
+}
+
+static void cycle_iterate_subsequent(void) {
+	window *temp = marker;
+	marker = marker->next[curws][TYPE_NORMAL];
+
+	cycle_raise(temp);
+
+	cycle_iterate_subsequent_helper(temp);	
+}
+
+static void cycle_iterate_restart(void) {
+	mywm_lower(stack[curws].lists[TYPE_NORMAL]);
+	cycle_iterate_subsequent();
+	cycle_iterate_helper = cycle_iterate_subsequent;	
+}
+
+static void cycle_iterate_last_helper(void) {
+	window *temp = marker;
+	marker = stack[curws].lists[TYPE_NORMAL];
+
+	mywm_raise(temp);
+	center_pointer(temp);
+	focus(temp);
+
+	cycle_iterate_helper = cycle_iterate_restart;
+}
+
+static void cycle_iterate(void) {
+	printf("start %x\n", marker);
+	if (marker->next[curws][TYPE_NORMAL]) {
+		printf("made 1\n");
+		cycle_iterate_helper();
+		printf("made 2\n");
+	} else {
+		printf("made 3\n");
+		cycle_raise(marker);
+		printf("made 4\n");
+		cycle_iterate_last_helper();
+		printf("made 5\n");
+	}
+}
+
+static void start_cycle() {
 	events[XCB_ENTER_NOTIFY] = NULL;
+	
+	state = CYCLE;
+	cycle_handler = cycle_iterate;
 	traverse(curws, TYPE_NORMAL, release_events);
 
-	int count = stack[curws].count[TYPE_NORMAL];
-	select_window_list = malloc(count * sizeof(window *));
-
-	window *cur = stack[curws].lists[TYPE_NORMAL];
-	for (int i = 0; i < count && cur; i++) {
-		if (cur == stack[curws].fwin) {
-			select_window_index = i;
-		}
-
-		select_window_list[i] = cur;
-		cur = cur->next[curws][TYPE_NORMAL];
+	if (stack[curws].fwin == stack[curws].lists[TYPE_NORMAL]) {
+		marker = stack[curws].fwin->next[curws][TYPE_NORMAL];
+	} else {
+		marker = stack[curws].fwin;
 	}
 
-	select_window_handler = select_window_iterate;
-	select_window_iterate();
+	if (marker->next[curws][TYPE_NORMAL]) {
+		window *temp = marker;
+		marker = marker->next[curws][TYPE_NORMAL];
+	
+		cycle_iterate_subsequent_helper(temp);	
+	} else {
+		cycle_iterate_last_helper();
+	}
 }
 
-void select_window_terminate(void) {
+void stop_cycle() {
 	state = DEFAULT;
 	events[XCB_ENTER_NOTIFY] = enter_notify;
-	traverse(curws, TYPE_NORMAL, reset_events);
-	select_window_handler = select_window_init;
-	free(select_window_list);
+	traverse(curws, TYPE_NORMAL, reset_events); 
+	cycle_handler = start_cycle;
+	cycle_iterate_helper = cycle_iterate_subsequent;
 }
 
-void select_window(void *arg) {
+void cycle(void *arg) {
+	if (!stack[curws].lists[TYPE_NORMAL] ||
+			!stack[curws].lists[TYPE_NORMAL]->next[curws][TYPE_NORMAL]) {
+		return;
+	}
+
+	cycle_handler();
+}*/
+
+static void (*cycle_handler)(void) = select_init;
+static window **select_list = NULL;
+
+static void select_init(void) {
+	select_list = malloc(stack[curws].count[TYPE_NORMAL])
+}
+
+void select(void *arg) {
 	window *stack_curws = stack[curws].lists[TYPE_NORMAL];
 	if (!stack_curws || !stack_curws->next[curws][TYPE_NORMAL]) {
 		return;
 	}
 
-	select_window_handler();
+	cycle_handler();	
 }
 
 void change_ws(void *arg) {
