@@ -1,8 +1,7 @@
 #ifndef ROUNDED_H
 #define ROUNDED_H
 
-#include <xcb/xcb.h>
-
+#include "mywm.h"
 #include "config.h"
 #include "window.h"
 

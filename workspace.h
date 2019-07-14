@@ -43,6 +43,7 @@ void excise_from(int ws, window *win);
 void insert_into_all_but(int ws, window *win);
 void excise_from_all_but(int ws, window *win);
 
+search_data search_helper(int ws, int type, xcb_window_t id, int (*func)(window *, xcb_window_t));
 search_data search_range(int ws, int type, int start_index, int end_index, xcb_window_t id);
 
 window *search_ws(int ws, int type, int window_index, xcb_window_t id);

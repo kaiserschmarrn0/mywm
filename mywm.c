@@ -18,6 +18,8 @@
 #include "workspace.h"
 #include "rounded.h"
 #include "action.h"
+#include "snap.h"
+#include "margin.h"
 
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT, };
 
@@ -169,13 +171,12 @@ void leave_notify(xcb_generic_event_t *ev) {
 
 static int button_press_helper(xcb_button_press_event_t *e, int len, const button list[],
 		xcb_window_t win, uint32_t x, uint32_t y) {
+
 	for (int i = 0; i < len; i++) {
 		if (e->detail == list[i].button && list[i].mod == e->state) {
 			if (list[i].press) {
 				list[i].press(&(press_arg){ win, x, y });
 			}
-			events[XCB_MOTION_NOTIFY] = (void (*)(xcb_generic_event_t *))list[i].motion;
-			events[XCB_BUTTON_RELEASE] = (void (*)(xcb_generic_event_t *))list[i].release;
 			return 1;
 		}
 	}
@@ -185,6 +186,21 @@ static int button_press_helper(xcb_button_press_event_t *e, int len, const butto
 
 static void button_press(xcb_generic_event_t *ev) {
 	xcb_button_press_event_t *e = (xcb_button_press_event_t *)ev;
+
+	search_data ret = search_helper(curws, TYPE_NORMAL, e->event, search_resize_regions);
+	if (ret.win) {
+		switch(ret.index) {
+			case 0: mouse_resize_north_west(&(press_arg){ stack[curws].fwin->windows[WIN_PARENT], e->root_x, e->root_y }); break;
+			case 1: mouse_resize_north(&(press_arg){ stack[curws].fwin->windows[WIN_PARENT], e->root_x, e->root_y }); break;
+			case 2: mouse_resize_north_east(&(press_arg){ stack[curws].fwin->windows[WIN_PARENT], e->root_x, e->root_y }); break;
+			case 3: mouse_resize_east(&(press_arg){ stack[curws].fwin->windows[WIN_PARENT], e->root_x, e->root_y }); break;
+			case 4: mouse_resize_south_east(&(press_arg){ stack[curws].fwin->windows[WIN_PARENT], e->root_x, e->root_y }); break;
+			case 5: mouse_resize_south(&(press_arg){ stack[curws].fwin->windows[WIN_PARENT], e->root_x, e->root_y }); break;
+			case 6: mouse_resize_south_west(&(press_arg){ stack[curws].fwin->windows[WIN_PARENT], e->root_x, e->root_y }); break;
+			case 7: mouse_resize_west(&(press_arg){ stack[curws].fwin->windows[WIN_PARENT], e->root_x, e->root_y }); break;
+		}
+		return;
+	}
 
 	for (int i = WIN_COUNT; i < REGION_COUNT; i++) {
 		if (stack[curws].fwin->windows[i] == e->child) {
@@ -210,9 +226,7 @@ static void key_press(xcb_generic_event_t *ev) {
 	xcb_key_press_event_t *e = (xcb_key_press_event_t *)ev;
 	xcb_keysym_t keysym = xcb_key_symbols_get_keysym(keysyms, e->detail, 0);
 
-	printf("press: %d %d\n", keysym, e->state);
 	if (keysym != XK_Tab && state == SELECT_WINDOW) {
-		printf("stopping select\n");
 		select_window_terminate();
 	}
 
@@ -228,10 +242,7 @@ static void key_release(xcb_generic_event_t *ev) {
 	xcb_key_release_event_t *e = (xcb_key_release_event_t *)ev;
 	xcb_keysym_t keysym = xcb_key_symbols_get_keysym(keysyms, e->detail, 0);
 	
-	printf("releass: %d %d\n", keysym, e->state);
-
 	if (keysym == XK_Super_L && state == SELECT_WINDOW) {
-		printf("stopping select\n");
 		select_window_terminate();
 	}
 }

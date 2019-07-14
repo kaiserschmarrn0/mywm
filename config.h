@@ -4,6 +4,7 @@
 #include <X11/keysym.h>
 
 #include "mywm.h"
+#include "mouse.h"
 #include "action.h"
 
 #define NUM_WS 4
@@ -15,12 +16,13 @@
 
 #define TITLE 32
 
+#define RESIZE_REGION_WIDTH 10
+#define RESIZE_REGION_CORNER 32
+
 #define FOCUSCOL 0xff4d484a
-//#define UNFOCUSCOL 0xff302e2f
 #define UNFOCUSCOL 0xff242223
 
-#define SNAP_MARGIN 5
-#define SNAP_CORNER 256
+#define MARGIN 5
 
 #define SNAP_MAX_SMART
 
@@ -43,21 +45,21 @@ static const char *fonts[] = {
 /* mouse controls */
 
 static const button grab_buttons[] = {
-	{ MOD, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion_start,   button_release },
-	{ MOD, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, resize_release },
+	{ MOD, XCB_BUTTON_INDEX_1, mouse_move,   },
+	{ MOD, XCB_BUTTON_INDEX_3, mouse_resize_south_east, },
 };
 
 static const button parent_buttons[] = {
-	{ 0, XCB_BUTTON_INDEX_1, mouse_move,   mouse_move_motion_start,   button_release },
-	{ 0, XCB_BUTTON_INDEX_3, mouse_resize, mouse_resize_motion, resize_release },
+	{ 0, XCB_BUTTON_INDEX_1, mouse_move,   },
+	{ 0, XCB_BUTTON_INDEX_3, mouse_resize_south_east, },
 };
 
 static const button close_buttons[] = {
-	{ 0, XCB_BUTTON_INDEX_1, region_press, NULL, region_close },
+	{ 0, XCB_BUTTON_INDEX_1, window_button_close },
 };
 
 static const button max_buttons[] = {
-	{ 0, XCB_BUTTON_INDEX_1, region_press, NULL, region_snap_u },
+	{ 0, XCB_BUTTON_INDEX_1, window_button_snap_u },
 };
 
 static const control controls[] = {

@@ -28,6 +28,8 @@ typedef struct window {
 	xcb_window_t windows[WIN_COUNT + LEN(controls)];
 	int last_pm[LEN(controls)];
 
+	xcb_window_t resize_regions[8];
+
 	xcb_gcontext_t gc;
 
 	uint32_t geom[4];
@@ -82,6 +84,8 @@ void ext_full(window *win);
 
 void free_client(window *subj, int ws);
 void forget_client(window *subj, int ws);
+
+int search_resize_regions(window *win, xcb_window_t id);
 
 void update_geometry(window *win, uint32_t mask, const uint32_t *true_vals);
 

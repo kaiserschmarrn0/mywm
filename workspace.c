@@ -62,11 +62,9 @@ void insert_into(int ws, window *win) {
 	} else if (!win->is_i_full && !win->is_e_full) {
 		safe_traverse(ws, TYPE_ABOVE, mywm_raise);
 	}
-
-	print_stack(ws, TYPE_ALL);
 }
 
-void append_to_helper(int ws, int type, window *win) {
+static void append_to_helper(int ws, int type, window *win) {
 	win->prev[ws][type] = stack[ws].lists[type].last;
 	win->next[ws][type] = NULL;
 
@@ -144,6 +142,17 @@ void insert_into_all_but(int ws, window *win) {
 
 void excise_from_all_but(int ws, window *win) {
 	all_but_helper(ws, win, excise_from);
+}
+
+search_data search_helper(int ws, int type, xcb_window_t id, int (*func)(window *, xcb_window_t)) {
+	search_data ret;
+	for (ret.win = stack[ws].lists[type].first; ret.win; ret.win = ret.win->next[ws][type]) {
+		ret.index = func(ret.win, id);
+		if (-1 < ret.index) {
+			return ret;
+		}
+	}
+	return ret;
 }
 
 search_data search_range(int ws, int type, int start_index, int end_index, xcb_window_t id) {

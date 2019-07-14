@@ -40,8 +40,6 @@ typedef struct {
 	uint32_t button;
 
 	void (*press) (void *arg);
-	void (*motion) (void *arg);
-	void (*release) (void *arg);
 } button;
 
 enum {

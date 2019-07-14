@@ -1,12 +1,11 @@
-#include <math.h>
-
-#include <xcb/shape.h>
-
 #include "rounded.h"
 
-xcb_rectangle_t rect_mask[2 * RAD];
-int rect_count = -1;
-int corner_height = 0;
+#include <math.h>
+#include <xcb/shape.h>
+
+static xcb_rectangle_t rect_mask[2 * RAD];
+static int rect_count = -1;
+static int corner_height = 0;
 
 void init_rounded_corners() {
 	int last_res;
