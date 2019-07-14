@@ -42,7 +42,7 @@ static void select_window_iterate(void) {
 	}
 
 	unsigned int new_index = select_window_index + 1;
-	if (new_index < stack[curws].count[TYPE_NORMAL]) {
+	if (new_index < stack[curws].lists[TYPE_NORMAL].count) {
 		select_window_index = new_index;
 	} else {
 		select_window_index = 0;
@@ -57,12 +57,13 @@ static void select_window_iterate(void) {
 static void select_window_init(void) {
 	state = SELECT_WINDOW;
 	events[XCB_ENTER_NOTIFY] = NULL;
+	events[XCB_LEAVE_NOTIFY] = NULL;
 	traverse(curws, TYPE_NORMAL, release_events);
 
-	int count = stack[curws].count[TYPE_NORMAL];
+	int count = stack[curws].lists[TYPE_NORMAL].count;
 	select_window_list = malloc(count * sizeof(window *));
 
-	window *cur = stack[curws].lists[TYPE_NORMAL];
+	window *cur = stack[curws].lists[TYPE_NORMAL].first;
 	for (int i = 0; i < count && cur; i++) {
 		if (cur == stack[curws].fwin) {
 			select_window_index = i;
@@ -79,13 +80,14 @@ static void select_window_init(void) {
 void select_window_terminate(void) {
 	state = DEFAULT;
 	events[XCB_ENTER_NOTIFY] = enter_notify;
+	events[XCB_LEAVE_NOTIFY] = leave_notify;
 	traverse(curws, TYPE_NORMAL, reset_events);
 	select_window_handler = select_window_init;
 	free(select_window_list);
 }
 
 void select_window(void *arg) {
-	window *stack_curws = stack[curws].lists[TYPE_NORMAL];
+	window *stack_curws = stack[curws].lists[TYPE_NORMAL].first;
 	if (!stack_curws || !stack_curws->next[curws][TYPE_NORMAL]) {
 		return;
 	}

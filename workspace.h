@@ -6,11 +6,18 @@
 #include "window.h"
 #include "config.h"
 
-typedef struct workspace {
-	window *lists[TYPE_COUNT];
-	window *last[TYPE_COUNT];
+typedef struct {
+	window *first;
+	window *last;
 
-	int count[TYPE_COUNT];
+	int count;
+} list;
+
+typedef struct {
+	/*window *lists[TYPE_COUNT];
+	window *last[TYPE_COUNT];*/
+
+	list lists[TYPE_COUNT];
 
 	window *fwin;
 } workspace;

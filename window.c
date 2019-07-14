@@ -73,7 +73,7 @@ void mywm_lower(window *win) {
 }
 
 void safe_raise(window *win) {
-	if (win != stack[curws].lists[TYPE_ALL]) {
+	if (win != stack[curws].lists[TYPE_ALL].first) {
 		mywm_raise(win);
 	}
 }
