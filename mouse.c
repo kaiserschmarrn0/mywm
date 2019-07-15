@@ -63,12 +63,16 @@ void button_release(void *arg) {
 	events[XCB_BUTTON_RELEASE] = NULL; //jic
 }
 
-void grab_pointer() {
+static void grab_pointer_cursor(xcb_cursor_t cursor) {
 	uint32_t mask = XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION |
 			XCB_EVENT_MASK_POINTER_MOTION;
 	uint32_t type = XCB_GRAB_MODE_ASYNC;
-	xcb_grab_pointer(conn, 1, scr->root, mask, type, type, scr->root, XCB_NONE,
+	xcb_grab_pointer(conn, 1, scr->root, mask, type, type, scr->root, cursor,
 			XCB_CURRENT_TIME);
+}
+
+inline void grab_pointer(void) {
+	grab_pointer_cursor(XCB_NONE);
 }
 
 void mouse_move(void *arg) {
@@ -126,8 +130,6 @@ static int mouse_resize(press_arg *info) {
 
 	state = RESIZE;
 	
-	grab_pointer();
-
 	return 1;
 }
 
@@ -179,6 +181,8 @@ void mouse_resize_south_east(void *arg) {
 		return;
 	}
 	
+	grab_pointer_cursor(resize_cursors[4]);
+	
 	mouse_resize_set_x_east((press_arg *)arg);
 	mouse_resize_set_y_south((press_arg *)arg);
 
@@ -207,6 +211,8 @@ void mouse_resize_south(void *arg) {
 	if (!mouse_resize((press_arg *)arg)) {
 		return;
 	}
+
+	grab_pointer_cursor(resize_cursors[5]);
 	
 	mouse_resize_set_y_south((press_arg *)arg);
 
@@ -236,6 +242,8 @@ void mouse_resize_north(void *arg) {
 	if (!mouse_resize((press_arg *)arg)) {
 		return;
 	}
+	
+	grab_pointer_cursor(resize_cursors[1]);
 	
 	mouse_resize_set_y_north((press_arg *)arg);
 	mouse_resize_set_south();
@@ -267,6 +275,8 @@ void mouse_resize_west(void *arg) {
 		return;
 	}
 	
+	grab_pointer_cursor(resize_cursors[7]);
+	
 	mouse_resize_set_x_west((press_arg *)arg);
 	mouse_resize_set_east();
 
@@ -295,6 +305,8 @@ void mouse_resize_east(void *arg) {
 	if (!mouse_resize((press_arg *)arg)) {
 		return;
 	}
+	
+	grab_pointer_cursor(resize_cursors[3]);
 	
 	mouse_resize_set_x_east((press_arg *)arg);
 
@@ -325,6 +337,8 @@ void mouse_resize_north_west(void *arg) {
 	if (!mouse_resize((press_arg *)arg)) {
 		return;
 	}
+	
+	grab_pointer_cursor(resize_cursors[0]);
 	
 	mouse_resize_set_x_west((press_arg *)arg);
 	mouse_resize_set_y_north((press_arg *)arg);
@@ -358,6 +372,8 @@ void mouse_resize_north_east(void *arg) {
 		return;
 	}
 	
+	grab_pointer_cursor(resize_cursors[2]);
+	
 	mouse_resize_set_x_east((press_arg *)arg);
 	mouse_resize_set_y_north((press_arg *)arg);
 	mouse_resize_set_south();
@@ -388,6 +404,8 @@ void mouse_resize_south_west(void *arg) {
 	if (!mouse_resize((press_arg *)arg)) {
 		return;
 	}
+	
+	grab_pointer_cursor(resize_cursors[6]);
 	
 	mouse_resize_set_x_west((press_arg *)arg);
 	mouse_resize_set_y_south((press_arg *)arg);

@@ -3,6 +3,7 @@
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_ewmh.h>
+#include <X11/Xlib-xcb.h>
 
 #define LEN(A) sizeof(A)/sizeof(*A)
 
@@ -101,5 +102,7 @@ void close_helper(xcb_window_t win);
 void enter_notify(xcb_generic_event_t *ev);
 void leave_notify(xcb_generic_event_t *ev);
 
+extern Display *dpy;
+extern Visual *vis_ptr;
 
 #endif

@@ -1,4 +1,4 @@
-SRC = mywm.c rounded.c window.c workspace.c action.c mouse.c snap.c margin.c
+SRC = mywm.c rounded.c window.c workspace.c action.c mouse.c snap.c margin.c color.c
 OBJ = $(SRC:.c=.o)
 
 PREFIX = /usr/local

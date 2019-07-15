@@ -1,11 +1,13 @@
 #include <xcb/xcb_icccm.h>
 #include <xcb/shape.h>
+#include <string.h>
 
 #include "window.h"
 #include "mywm.h"
 #include "workspace.h"
 #include "rounded.h"
 #include "mouse.h"
+#include "color.h"
 
 #define PARENT_EVENTS XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_BUTTON_PRESS | \
 		XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_ENTER_WINDOW | \
@@ -135,6 +137,10 @@ void show_state(window *win) {
 }
 
 void show(window *win) {
+	if (win->sticky) {
+		return;
+	}
+
 	xcb_map_window(conn, win->windows[WIN_CHILD]);	
 	xcb_map_window(conn, win->windows[WIN_PARENT]);	
 
@@ -142,6 +148,10 @@ void show(window *win) {
 }
 
 void hide(window *win) {
+	if (win->sticky) {
+		return;
+	}
+
 	xcb_unmap_window(conn, win->windows[WIN_CHILD]);
 	xcb_unmap_window(conn, win->windows[WIN_PARENT]);
 	
@@ -161,7 +171,7 @@ void frame_extents(xcb_window_t win) { //unused aorn
 	uint32_t vals[4];
 	vals[0] = 0;     //left
 	vals[1] = 0;     //right
-	vals[2] = TITLE; //top
+	vals[2] = PAD_N; //top
 	vals[3] = 0;     //bot
 	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, ewmh->_NET_FRAME_EXTENTS,
 			XCB_ATOM_CARDINAL, 32, 4, &vals);
@@ -219,10 +229,10 @@ void full_restore_state(window *win) {
 
 void full(window *win) {
 	uint32_t vals[4];
-	vals[0] = 0;
-	vals[1] = - TITLE;
-	vals[2] = scr->width_in_pixels;
-	vals[3] = scr->height_in_pixels + TITLE;
+	vals[0] = - PAD;
+	vals[1] = - PAD_N;
+	vals[2] = scr->width_in_pixels + 2 * PAD;
+	vals[3] = scr->height_in_pixels + PAD_N + PAD;
 	update_geometry(win, MOVE_RESIZE_MASK, vals);
 
 	ewmh_state(win);
@@ -250,7 +260,8 @@ void forget_client(window *win, int ws) {
 	if (win->windows[WIN_PARENT] != XCB_WINDOW_NONE) {
 		xcb_generic_error_t *error = NULL;
 		error = xcb_request_check(conn, xcb_reparent_window_checked(conn,
-				win->windows[WIN_CHILD], scr->root, win->geom[GEOM_X], win->geom[GEOM_Y] + TITLE));
+				win->windows[WIN_CHILD], scr->root, win->geom[GEOM_X] + PAD,
+				win->geom[GEOM_Y] + PAD_N));
 
 		if (!error) {
 			xcb_change_save_set(conn, XCB_SET_MODE_DELETE, win->windows[WIN_CHILD]);
@@ -308,7 +319,7 @@ void update_geometry(window *win, uint32_t mask, const uint32_t *true_vals) {
 
 	if (mask & XCB_CONFIG_WINDOW_WIDTH) {
 		win->geom[2] = true_vals[p];
-		vals[p] = true_vals[p];
+		vals[p] = true_vals[p] - 2 * PAD;
 		child_mask |= XCB_CONFIG_WINDOW_WIDTH;
 
 		uint32_t new_w = true_vals[p] - 2 * RESIZE_REGION_CORNER;
@@ -320,7 +331,7 @@ void update_geometry(window *win, uint32_t mask, const uint32_t *true_vals) {
 
 	if (mask & XCB_CONFIG_WINDOW_HEIGHT) {
 		win->geom[3] = true_vals[p];
-		vals[p] = true_vals[p] - TITLE;
+		vals[p] = true_vals[p] - PAD_N - PAD;
 		child_mask |= XCB_CONFIG_WINDOW_HEIGHT;
 
 		uint32_t new_h = true_vals[p] - 2 * RESIZE_REGION_CORNER;
@@ -337,40 +348,31 @@ void update_geometry(window *win, uint32_t mask, const uint32_t *true_vals) {
 	ev.window = win->windows[WIN_CHILD];
 	ev.above_sibling = XCB_NONE;
 	ev.x = win->geom[0];
-	ev.y = win->geom[1] + TITLE;
+	ev.y = win->geom[1] + PAD_N;
 	ev.width = win->geom[2];
-	ev.height = win->geom[3] - TITLE;
+	ev.height = win->geom[3] - PAD_N;
 	ev.border_width = 0;
 	ev.override_redirect = 0;
 
 	xcb_send_event(conn, 0, win->windows[WIN_CHILD], XCB_EVENT_MASK_NO_EVENT, (char *)&ev);
 
 #ifdef ROUNDED
-	if (p > c) {
+	/*if (p > c) {
 		rounded_corners(win);	
-	}
-
-	if (win->is_snap || win->is_i_full || win->is_e_full) {
+	}*/
+#ifdef SNAP_MAX_SMART
+	if ((win->snap_index != SNAP_NONE && GAP == 0)|| win->is_i_full || win->is_e_full || win->snap_index == SNAP_U) {
+#else
+	if ((win->snap_index != SNAP_NONE && GAP == 0)|| win->is_i_full || win->is_e_full) {
+#endif
 		xcb_shape_mask(conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING, win->windows[WIN_PARENT], 0, 0, XCB_NONE);
+	} else if (p > c) {
+		rounded_corners(win);	
 	}
 #endif
 
 	if (child_mask) {
 		xcb_configure_window(conn, win->windows[WIN_CHILD], child_mask, vals + c);
-	}
-}
-
-static uint32_t size_helper(uint32_t win_sze, uint32_t scr_sze) {
-	return win_sze > scr_sze ? scr_sze : win_sze;
-}
-
-static uint32_t place_helper(uint32_t ptr_pos, uint32_t win_sze, uint32_t scr_sze) {
-	if (ptr_pos < win_sze / 2 + BORDER) {
-		return 0;
-	} else if (ptr_pos + win_sze / 2 + BORDER > scr_sze) {
-		return scr_sze - win_sze - 2 * BORDER;
-	} else {
-		return ptr_pos - win_sze / 2 - BORDER;
 	}
 }
 
@@ -429,8 +431,14 @@ void draw_region(window *win, int window_index, int pm_index) {
 
 typedef struct {
 	uint32_t gravity;
+	uint32_t cursor_index;
 	xcb_rectangle_t geom;
 } resize_region;
+
+typedef struct {
+	uint32_t cursor_index;
+	xcb_cursor_t cursor;
+} mywm_cursor;
 
 int search_resize_regions(window *win, xcb_window_t id) {
 	for (unsigned int i = 0; i < 8; i++) {
@@ -442,7 +450,66 @@ int search_resize_regions(window *win, xcb_window_t id) {
 	return -1;
 }
 
-void make_win_normal(window *win) {
+#define CURSOR_DEFAULT 68
+
+const uint16_t resize_cursor_indicies[8] = { 144, 140, 148, 98, 78, 18, 76, 72 };
+
+xcb_cursor_t default_cursor;
+xcb_cursor_t resize_cursors[8];
+
+static xcb_cursor_t cursor_create(xcb_font_t font, XRenderColor fg, XRenderColor bg, uint16_t index) {
+	xcb_cursor_t cursor = xcb_generate_id(conn);
+	xcb_create_glyph_cursor(conn, cursor, font, font, index, index + 1, fg.red, fg.green, fg.blue,
+			bg.red, bg.green, bg.blue);
+	return cursor;
+}
+
+void cursor_init(void) {
+	xcb_font_t cursor_font = xcb_generate_id(conn);
+	xcb_open_font(conn, cursor_font, strlen("cursor"), "cursor");
+
+	XRenderColor cursor_fg = hex_to_rgb(CURSOR_FG);
+	XRenderColor cursor_bg = hex_to_rgb(CURSOR_BG);
+
+	default_cursor = cursor_create(cursor_font, cursor_fg, cursor_bg, CURSOR_DEFAULT);
+	
+	for (int i = 0; i < 8; i++) {
+		resize_cursors[i] = cursor_create(cursor_font, cursor_fg, cursor_bg, resize_cursor_indicies[i]);
+	}
+
+	xcb_close_font_checked(conn, cursor_font);
+
+	xcb_change_window_attributes(conn, scr->root, XCB_CW_CURSOR, &default_cursor);
+}
+
+void cursor_clean(void) {
+	xcb_free_cursor(conn, default_cursor);
+
+	for (int i = 0; i < 8; i++) {
+		xcb_free_cursor(conn, resize_cursors[i]);
+	}
+}
+
+static window *create_window(xcb_window_t child, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+	window *win = malloc(sizeof(window));
+	win->windows[WIN_PARENT] = XCB_WINDOW_NONE;
+	win->windows[WIN_CHILD] = child;
+	win->ignore_unmap = 0;
+	win->is_roll = 0;
+	win->snap_index = SNAP_NONE;
+	win->is_e_full = 0;
+	win->is_i_full = 0;
+	win->sticky = 0;
+	win->above = 0;
+	win->normal = 1;
+
+	window_property_helper(xcb_ewmh_get_wm_window_type(ewmh, child), win, test_window_type);
+	window_property_helper(xcb_ewmh_get_wm_state(ewmh, child), win, test_window_state);
+	
+	if (!win->normal) {
+		return win;
+	}
+
 	xcb_change_save_set(conn, XCB_SET_MODE_INSERT, win->windows[WIN_CHILD]);
 
 	win->windows[WIN_PARENT] = xcb_generate_id(conn);
@@ -451,16 +518,7 @@ void make_win_normal(window *win) {
 	uint32_t vals[6];
 	vals[0] = 0;
 	xcb_configure_window(conn, win->windows[WIN_CHILD], mask, vals);
-
-	xcb_get_geometry_reply_t *init_geom = w_get_geometry(win->windows[WIN_CHILD]);
-	xcb_query_pointer_reply_t *ptr = w_query_pointer();
-	uint32_t w = size_helper(init_geom->width, scr->width_in_pixels);
-	uint32_t h = size_helper(init_geom->height + TITLE, scr->height_in_pixels - TOP - BOT);
-	uint32_t x = place_helper(ptr->root_x, w, scr->width_in_pixels);
-	uint32_t y = TOP + place_helper(ptr->root_y - TOP, h, scr->height_in_pixels - TOP - BOT);
-	free(ptr);
-	free(init_geom);
-
+	
 	mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK |
 			XCB_CW_COLORMAP;
 	vals[0] = 0xffffffff;
@@ -500,30 +558,31 @@ void make_win_normal(window *win) {
 		draw_region(win, i, PM_FOCUS);
 	}
 
-	xcb_reparent_window(conn, win->windows[WIN_CHILD], win->windows[WIN_PARENT], 0, TITLE);
+	xcb_reparent_window(conn, win->windows[WIN_CHILD], win->windows[WIN_PARENT], PAD, PAD_N);
 
 	resize_region resize_regions[8] = {
-		{ XCB_GRAVITY_NORTH_WEST, { 0, 0, RESIZE_REGION_CORNER, RESIZE_REGION_CORNER } },
-		{ XCB_GRAVITY_NORTH_WEST, { RESIZE_REGION_CORNER, 0, w - 2 * RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH } },
-		{ XCB_GRAVITY_NORTH_EAST, { w - RESIZE_REGION_CORNER, 0, RESIZE_REGION_CORNER, RESIZE_REGION_CORNER } },
-		{ XCB_GRAVITY_NORTH_EAST, { w - RESIZE_REGION_WIDTH, RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH, h - 2 * RESIZE_REGION_CORNER } },
-		{ XCB_GRAVITY_SOUTH_EAST, { w - RESIZE_REGION_CORNER, h - RESIZE_REGION_CORNER, RESIZE_REGION_CORNER, RESIZE_REGION_CORNER } },
-		{ XCB_GRAVITY_SOUTH_WEST, { RESIZE_REGION_CORNER, h - RESIZE_REGION_WIDTH, w - 2 * RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH } },
-		{ XCB_GRAVITY_SOUTH_WEST, { 0, h - RESIZE_REGION_CORNER, RESIZE_REGION_CORNER, RESIZE_REGION_CORNER } },
-		{ XCB_GRAVITY_NORTH_WEST, { 0, RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH, h - RESIZE_REGION_CORNER } },
+		{ XCB_GRAVITY_NORTH_WEST, 144, { 0, 0, RESIZE_REGION_CORNER, RESIZE_REGION_CORNER } },
+		{ XCB_GRAVITY_NORTH_WEST, 140, { RESIZE_REGION_CORNER, 0, w - 2 * RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH } },
+		{ XCB_GRAVITY_NORTH_EAST, 148, { w - RESIZE_REGION_CORNER, 0, RESIZE_REGION_CORNER, RESIZE_REGION_CORNER } },
+		{ XCB_GRAVITY_NORTH_EAST, 98, { w - RESIZE_REGION_WIDTH, RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH, h - 2 * RESIZE_REGION_CORNER } },
+		{ XCB_GRAVITY_SOUTH_EAST, 78, { w - RESIZE_REGION_CORNER, h - RESIZE_REGION_CORNER, RESIZE_REGION_CORNER, RESIZE_REGION_CORNER } },
+		{ XCB_GRAVITY_SOUTH_WEST, 18, { RESIZE_REGION_CORNER, h - RESIZE_REGION_WIDTH, w - 2 * RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH } },
+		{ XCB_GRAVITY_SOUTH_WEST, 76, { 0, h - RESIZE_REGION_CORNER, RESIZE_REGION_CORNER, RESIZE_REGION_CORNER } },
+		{ XCB_GRAVITY_NORTH_WEST, 72, { 0, RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH, h - RESIZE_REGION_CORNER } },
 	};
 
 	for (int i = 0; i < 8; i++) {
 		win->resize_regions[i] = xcb_generate_id(conn);
-		mask = XCB_CW_WIN_GRAVITY | XCB_CW_EVENT_MASK;
+		mask = XCB_CW_WIN_GRAVITY | XCB_CW_EVENT_MASK | XCB_CW_CURSOR;
 		vals[0] = resize_regions[i].gravity;
 		vals[1] = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_ENTER_WINDOW;
+		vals[2] = resize_cursors[i];
 		xcb_create_window(conn, XCB_COPY_FROM_PARENT, win->resize_regions[i],
 			win->windows[WIN_PARENT], resize_regions[i].geom.x, resize_regions[i].geom.y,
 			resize_regions[i].geom.width, resize_regions[i].geom.height, 0,
 			XCB_WINDOW_CLASS_INPUT_ONLY, XCB_COPY_FROM_PARENT, mask, vals);
 	}
-
+	
 	xcb_rectangle_t resize_region_rects[4][2] = {
 		{ { 0, 0, RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH }, { 0, RESIZE_REGION_WIDTH, RESIZE_REGION_WIDTH, RESIZE_REGION_CORNER - RESIZE_REGION_WIDTH } },
 		{ { 0, 0, RESIZE_REGION_CORNER, RESIZE_REGION_WIDTH }, { RESIZE_REGION_CORNER - RESIZE_REGION_WIDTH, RESIZE_REGION_WIDTH, RESIZE_REGION_WIDTH, RESIZE_REGION_CORNER - RESIZE_REGION_WIDTH } },
@@ -560,32 +619,59 @@ void make_win_normal(window *win) {
 	} else {
 		unfocus(win);
 	}
-}
-
-window *new_win(xcb_window_t child) {
-	window *win = malloc(sizeof(window));
-	win->windows[WIN_PARENT] = XCB_WINDOW_NONE;
-	win->windows[WIN_CHILD] = child;
-	win->ignore_unmap = 0;
-	win->is_roll = 0;
-	win->snap_index = SNAP_NONE;
-	win->is_e_full = 0;
-	win->is_i_full = 0;
-	win->sticky = 0;
-	win->above = 0;
-	win->normal = 1;
-
-	uint32_t vals[4];
-	uint32_t mask;
-
-	window_property_helper(xcb_ewmh_get_wm_window_type(ewmh, child), win, test_window_type);
-	window_property_helper(xcb_ewmh_get_wm_state(ewmh, child), win, test_window_state);
-	
-	if (win->normal) {
-		make_win_normal(win);
-	}
-
-	insert_into(curws, win);
 
 	return win;
+}
+
+static uint32_t size_helper(uint32_t win_sze, uint32_t scr_sze) {
+	return win_sze > scr_sze ? scr_sze : win_sze;
+}
+
+static uint32_t place_helper(uint32_t ptr_pos, uint32_t win_sze, uint32_t scr_sze) {
+	if (ptr_pos < win_sze / 2 + BORDER) {
+		return 0;
+	} else if (ptr_pos + win_sze / 2 + BORDER > scr_sze) {
+		return scr_sze - win_sze - 2 * BORDER;
+	} else {
+		return ptr_pos - win_sze / 2 - BORDER;
+	}
+}
+
+void create_window_new(xcb_window_t child) {
+	xcb_get_geometry_reply_t *geom = w_get_geometry(child);
+	xcb_query_pointer_reply_t *ptr = w_query_pointer();
+	uint32_t w = size_helper(geom->width + 2 * PAD, scr->width_in_pixels);
+	uint32_t h = size_helper(geom->height + PAD_N + PAD, scr->height_in_pixels - TOP - BOT);
+	uint32_t x = place_helper(ptr->root_x, w, scr->width_in_pixels);
+	uint32_t y = TOP + place_helper(ptr->root_y - TOP, h, scr->height_in_pixels - TOP - BOT);
+	free(ptr);
+	free(geom);
+
+	window *win = create_window(child, x, y, w, h);
+	
+	insert_into(curws, win);
+}
+
+static uint32_t create_window_existing_place_helper(int start, uint32_t win_sze, uint32_t scr_sze) {
+	if (start < 0) {
+		return 0;
+	} else if (start + win_sze > scr_sze) {
+		return scr_sze - win_sze;
+	}
+
+	return start;
+}
+
+void create_window_existing(xcb_window_t child) {
+	xcb_get_geometry_reply_t *geom = w_get_geometry(child);
+	uint32_t w = size_helper(geom->width + 2 * PAD, scr->width_in_pixels);
+	uint32_t h = size_helper(geom->height + PAD_N + PAD, scr->height_in_pixels - TOP - BOT);
+	uint32_t x = create_window_existing_place_helper(geom->x - PAD, w, scr->width_in_pixels);
+	uint32_t y = TOP + create_window_existing_place_helper(geom->y - TOP - PAD_N, h, scr->height_in_pixels - TOP - BOT);
+	free(geom);
+
+	window *win = create_window(child, x, y, w, h);
+	win->ignore_unmap = 1;
+	
+	insert_into(curws, win);
 }

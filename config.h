@@ -14,13 +14,22 @@
 #define GAP 0
 #define BORDER 0
 
-#define TITLE 32
+#define PAD_N 32
+#define PAD 2
 
-#define RESIZE_REGION_WIDTH 10
+#define RESIZE_REGION_WIDTH 8
 #define RESIZE_REGION_CORNER 32
 
 #define FOCUSCOL 0xff4d484a
-#define UNFOCUSCOL 0xff242223
+#define UNFOCUSCOL 0xff302e2f
+
+//#define UNFOCUSCOL 0xff242223
+
+//#define UNFOCUSCOL 0xff4d484a
+//#define FOCUSCOL 0xff4d484a
+
+#define CURSOR_FG 0xFFD7D7D7
+#define CURSOR_BG 0xff242223
 
 #define MARGIN 5
 
@@ -29,9 +38,9 @@
 /* rounded corners */
 
 //uncomment for rounded corners
-//#define ROUNDED
+#define ROUNDED
 
-#define RAD 6
+#define RAD 2
 
 /* keyboard modifiers */
 
@@ -62,23 +71,27 @@ static const button max_buttons[] = {
 	{ 0, XCB_BUTTON_INDEX_1, window_button_snap_u },
 };
 
+#define WHITE 0xffd7d7d7
+#define GREEN 0xff28cd41
+#define RED 0xffff3b30
+
 static const control controls[] = {
 	{
-		{ 0, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf00d", NULL, close_buttons, 1, 0,
+		{ PAD, 0, PAD_N, PAD_N }, XCB_GRAVITY_NORTH_WEST, "\uf00d", NULL, close_buttons, 1, 0,
 		{
-			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
-			0xffff3b30, 0xff4d484a, //PM_HOVER
-			0xff4d484a, 0xffff3b30, //PM_PRESS
-			0xffd7d7d7, UNFOCUSCOL, //PM_UNFOCUS
+			WHITE, FOCUSCOL, //PM_FOCUS
+			RED, FOCUSCOL, //PM_HOVER
+			FOCUSCOL, RED, //PM_PRESS
+			WHITE, UNFOCUSCOL, //PM_UNFOCUS
 		},
 	},
 	{
-		{ TITLE, 0, TITLE, TITLE }, XCB_GRAVITY_NORTH_WEST, "\uf077", NULL, max_buttons, 1, 0,
+		{ PAD + PAD_N, 0, PAD_N, PAD_N }, XCB_GRAVITY_NORTH_WEST, "\uf077", NULL, max_buttons, 1, 0,
 		{		
-			0xffd7d7d7, 0xff4d484a, //PM_FOCUS
-			0xff28cd41, 0xff4d484a, //PM_HOVER
-			0xff4d484a, 0xff28cd41, //PM_PRESS
-			0xffd7d7d7, UNFOCUSCOL, //PM_UNFOCUS
+			WHITE, FOCUSCOL, //PM_FOCUS
+			GREEN, FOCUSCOL, //PM_HOVER
+			FOCUSCOL, GREEN, //PM_PRESS
+			WHITE, UNFOCUSCOL, //PM_UNFOCUS
 		},
 	},
 };

@@ -97,8 +97,8 @@ void change_ws(void *arg) {
 		return;
 	}
 
-	traverse(new_ws, TYPE_NORMAL, show);
 	traverse(curws, TYPE_NORMAL, hide); 
+	traverse(new_ws, TYPE_NORMAL, show);
 	
 	curws = new_ws;
 
@@ -202,7 +202,7 @@ void mouse_roll_up(void *arg) {
 	
 	found->before_roll = found->geom[GEOM_H];
 
-	uint32_t val = TITLE;
+	uint32_t val = PAD_N;
 	update_geometry(found, XCB_CONFIG_WINDOW_HEIGHT, &val);
 	
 	found->is_roll = 1;

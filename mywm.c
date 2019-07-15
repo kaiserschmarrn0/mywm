@@ -20,13 +20,14 @@
 #include "action.h"
 #include "snap.h"
 #include "margin.h"
+#include "color.h"
 
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT, };
 
 unsigned int sigcode = 0;
 
-static Display *dpy;
-static Visual *vis_ptr;
+Display *dpy;
+Visual *vis_ptr;
 uint32_t depth;
 
 static XftFont *xfts[LEN(fonts)];
@@ -129,7 +130,7 @@ static void map_request(xcb_generic_event_t *ev) {
 		return;
 	}
 
-	new_win(e->window);
+	create_window_new(e->window);
 }
 
 void enter_notify(xcb_generic_event_t *ev) {
@@ -363,12 +364,14 @@ static void die() {
 	//no need to preserve stack, could refactor forget_client
 	for (int i = 0; i < NUM_WS; i++) {
 		for (int j = 0; j < stack[i].lists[TYPE_ALL].count; j++) {
-			forget_client(stack[i].lists[TYPE_ALL].first, i);
+			forget_client(stack[i].lists[TYPE_ALL].last, i);
 		}
 	}
 
 	xcb_ungrab_key(conn, XCB_GRAB_ANY, scr->root, XCB_MOD_MASK_ANY);
 	xcb_key_symbols_free(keysyms);
+
+	cursor_clean();
 
 	for (int i = 0; i < LEN(controls); i++) {
 		for (int j = 0; j < PM_COUNT; j++) {
@@ -398,47 +401,6 @@ static void expose(xcb_generic_event_t *ev) {
 	}
 
 	draw_region(data.win, data.index, data.win->last_pm[data.index - WIN_COUNT]);
-}
-
-typedef union {
-	struct {
-		uint8_t b;
-		uint8_t g;
-		uint8_t r;
-		uint8_t a;
-	};
-	uint32_t v;
-} rgba;
-
-static uint32_t xcb_color(uint32_t hex) {
-	rgba col;
-	col.v = hex;
-
-	if (!col.a) {
-		return 0U;
-	}
-
-	col.r = (col.r * col.a) / 255;
-	col.g = (col.g * col.a) / 255;
-	col.b = (col.b * col.a) / 255;
-
-	return col.v;
-}
-
-XftColor xft_color(uint32_t hex) {
-	rgba col;
-	col.v = xcb_color(hex);
-
-	XRenderColor rc;
-	rc.red = col.r * 65535 / 255;
-	rc.green = col.g * 65535 / 255;
-	rc.blue = col.b * 65535 / 255;
-	rc.alpha = col.a * 65535 / 255;
-
-	XftColor ret;
-	XftColorAllocValue(dpy, vis_ptr, cm, &rc, &ret);
-
-	return ret;
 }
 
 int main(void) {
@@ -586,7 +548,11 @@ int main(void) {
 #ifdef ROUNDED
 	init_rounded_corners();
 #endif
-
+	
+	create_snap_regions();
+	create_margins();
+	cursor_init();
+	
 	xcb_query_tree_reply_t *tr_reply = xcb_query_tree_reply(conn,
 			xcb_query_tree(conn, scr->root), 0);
 
@@ -601,15 +567,10 @@ int main(void) {
 			continue;
 		}
 
-		window *cur = new_win(children[i]);
-
-		cur->ignore_unmap = 1;
+		create_window_existing(children[i]);
 	}
 
 	free(tr_reply);
-
-	create_snap_regions();
-	create_margins();
 
 	struct pollfd fd;
 	
@@ -633,6 +594,7 @@ int main(void) {
 			}
 
 			if (events[ev->response_type & ~0x80]) {
+				//printf("ev: %d\n", ev->response_type & ~0x80);
 				events[ev->response_type & ~0x80](ev);
 			}
 			free(ev);

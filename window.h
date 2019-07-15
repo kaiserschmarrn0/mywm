@@ -91,7 +91,12 @@ void update_geometry(window *win, uint32_t mask, const uint32_t *true_vals);
 
 void draw_region(window *win, int window_index, int pm_index);
 
-void make_win_normal(window *win);
-window *new_win(xcb_window_t child);
+void cursor_clean(void);
+void cursor_init(void);
+
+extern xcb_cursor_t resize_cursors[8];
+
+void create_window_new(xcb_window_t child);
+void create_window_existing(xcb_window_t child);
 
 #endif

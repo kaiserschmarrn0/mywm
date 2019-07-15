@@ -35,8 +35,8 @@ void create_snap_regions() {
 #else
 	snap_regions[3][0] = 0;
 	snap_regions[3][1] = TOP;
-	snap_regions[3][2] = scr->width_in_pixels - 2 * GAP - 2 * BORDER;
-	snap_regions[3][3] = scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT;
+	snap_regions[3][2] = scr->width_in_pixels;
+	snap_regions[3][3] = scr->height_in_pixels - TOP - BOT;
 #endif
 
 	/* ru */
