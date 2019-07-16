@@ -105,4 +105,6 @@ void leave_notify(xcb_generic_event_t *ev);
 extern Display *dpy;
 extern Visual *vis_ptr;
 
+void die();
+
 #endif

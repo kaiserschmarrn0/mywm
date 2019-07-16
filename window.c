@@ -94,6 +94,9 @@ void unfocus(window *win) {
 	xcb_clear_area(conn, 0, win->windows[WIN_PARENT], 0, 0, win->geom[GEOM_W],
 			win->geom[GEOM_H]);
 
+	xcb_set_input_focus(conn, XCB_INPUT_FOCUS_NONE, win->windows[WIN_CHILD],
+			XCB_CURRENT_TIME);
+
 	draw_regions(win, PM_UNFOCUS);
 	
 	ewmh_state(win);
@@ -301,8 +304,6 @@ void update_geometry(window *win, uint32_t mask, const uint32_t *true_vals) {
 	uint32_t child_mask = 0;
 	uint32_t vals[4] = { 0 };
 
-	xcb_configure_window(conn, win->windows[WIN_PARENT], mask, true_vals);
-
 	if (mask & XCB_CONFIG_WINDOW_X) {
 		win->geom[0] = true_vals[p];
 		vals[p] = true_vals[p];
@@ -374,6 +375,8 @@ void update_geometry(window *win, uint32_t mask, const uint32_t *true_vals) {
 	if (child_mask) {
 		xcb_configure_window(conn, win->windows[WIN_CHILD], child_mask, vals + c);
 	}
+	
+	xcb_configure_window(conn, win->windows[WIN_PARENT], mask, true_vals);
 }
 
 static void test_window_type(window *win, xcb_ewmh_get_atoms_reply_t type, int i) {
@@ -524,7 +527,7 @@ static window *create_window(xcb_window_t child, uint32_t x, uint32_t y, uint32_
 	vals[0] = 0xffffffff;
 	vals[1] = 0xffffffff;
 	vals[2] = 0;
-	vals[3] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+	vals[3] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | XCB_EVENT_MASK_FOCUS_CHANGE;
 	vals[4] = cm;
 	xcb_create_window(conn, depth, win->windows[WIN_PARENT], scr->root, x, y, w, h, 0,
 			XCB_WINDOW_CLASS_INPUT_OUTPUT, vis, mask, vals);

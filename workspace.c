@@ -193,12 +193,8 @@ window *search_all(int *ws, int type, int window_index, xcb_window_t id) {
 }
 
 void refocus(int ws) {
-	window *win;
-	if (stack[ws].fwin) {
-		win = stack[ws].fwin;
-	} else if (stack[ws].lists[TYPE_NORMAL].first) {
-		win = stack[ws].lists[TYPE_NORMAL].first;	
-	} else {
+	window *win = stack[ws].lists[TYPE_NORMAL].first;
+	if (!win) {
 		return;
 	}
 

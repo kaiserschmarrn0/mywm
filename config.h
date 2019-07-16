@@ -15,12 +15,13 @@
 #define BORDER 0
 
 #define PAD_N 32
-#define PAD 2
+#define PAD 1
 
 #define RESIZE_REGION_WIDTH 8
 #define RESIZE_REGION_CORNER 32
 
-#define FOCUSCOL 0xff4d484a
+//#define FOCUSCOL 0xff4d484a
+#define FOCUSCOL 0xff3d3a3c
 #define UNFOCUSCOL 0xff302e2f
 
 //#define UNFOCUSCOL 0xff242223
@@ -38,7 +39,7 @@
 /* rounded corners */
 
 //uncomment for rounded corners
-#define ROUNDED
+//#define ROUNDED
 
 #define RAD 2
 
@@ -48,7 +49,7 @@
 #define SHIFT XCB_MOD_MASK_SHIFT
 
 static const char *fonts[] = {
-	"Font Awesome:size=13:autohint=true:antialias=true"
+	"Font Awesome:size=12:autohint=true:antialias=true"
 };
 
 /* mouse controls */
@@ -77,7 +78,7 @@ static const button max_buttons[] = {
 
 static const control controls[] = {
 	{
-		{ PAD, 0, PAD_N, PAD_N }, XCB_GRAVITY_NORTH_WEST, "\uf00d", NULL, close_buttons, 1, 0,
+		{ 0, 0, PAD_N, PAD_N }, XCB_GRAVITY_NORTH_WEST, "\uf00d", NULL, close_buttons, 1, 0,
 		{
 			WHITE, FOCUSCOL, //PM_FOCUS
 			RED, FOCUSCOL, //PM_HOVER
@@ -86,7 +87,7 @@ static const control controls[] = {
 		},
 	},
 	{
-		{ PAD + PAD_N, 0, PAD_N, PAD_N }, XCB_GRAVITY_NORTH_WEST, "\uf077", NULL, max_buttons, 1, 0,
+		{ PAD_N, 0, PAD_N, PAD_N }, XCB_GRAVITY_NORTH_WEST, "\uf077", NULL, max_buttons, 1, 0,
 		{		
 			WHITE, FOCUSCOL, //PM_FOCUS
 			GREEN, FOCUSCOL, //PM_HOVER
@@ -108,6 +109,7 @@ static const keybind keys[] = {
 	{ MOD,         XK_Right, snap_r,    NULL      },
 	{ MOD,         XK_f,     snap_u,    NULL      },
 	{ MOD | SHIFT, XK_f,     int_full,  NULL      },
+	{ MOD | SHIFT, XK_q,     mywm_exit,  NULL      },
 
 	{ MOD,         XK_1,     change_ws, &(int){0} },
 	{ MOD,         XK_2,     change_ws, &(int){1} },

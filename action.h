@@ -16,6 +16,8 @@ void int_full(void *arg);
 void change_ws(void *arg);
 void send_ws(void *arg);
 
+void mywm_exit(void *arg);
+
 void window_button_close(void *arg);
 void window_button_snap_u(void *arg);
 void region_abort();

@@ -360,7 +360,7 @@ static void configure_request(xcb_generic_event_t *ev) {
 	}
 }
 
-static void die() {
+void die() {
 	//no need to preserve stack, could refactor forget_client
 	for (int i = 0; i < NUM_WS; i++) {
 		for (int j = 0; j < stack[i].lists[TYPE_ALL].count; j++) {
@@ -401,6 +401,12 @@ static void expose(xcb_generic_event_t *ev) {
 	}
 
 	draw_region(data.win, data.index, data.win->last_pm[data.index - WIN_COUNT]);
+}
+
+static void focus_in(xcb_generic_event_t *ev) {
+	xcb_focus_in_event_t *e = (xcb_focus_in_event_t*) ev;
+
+	printf("hmm\n");
 }
 
 int main(void) {
@@ -542,6 +548,7 @@ int main(void) {
 	events[XCB_LEAVE_NOTIFY]      = leave_notify;
 	events[XCB_MAPPING_NOTIFY]    = mapping_notify;
 	events[XCB_EXPOSE]            = expose;
+	events[XCB_FOCUS_IN]          = focus_in;
 
 	keysyms = xcb_key_symbols_alloc(conn);
 
@@ -594,7 +601,7 @@ int main(void) {
 			}
 
 			if (events[ev->response_type & ~0x80]) {
-				//printf("ev: %d\n", ev->response_type & ~0x80);
+				printf("ev: %d\n", ev->response_type & ~0x80);
 				events[ev->response_type & ~0x80](ev);
 			}
 			free(ev);

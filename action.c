@@ -97,8 +97,19 @@ void change_ws(void *arg) {
 		return;
 	}
 
+	if (stack[curws].fwin) {
+		unfocus(stack[curws].fwin);
+	}
+
 	traverse(curws, TYPE_NORMAL, hide); 
+	
+	xcb_ewmh_set_current_desktop(ewmh, 0, new_ws);
+	
 	traverse(new_ws, TYPE_NORMAL, show);
+
+	if (stack[new_ws].fwin) {
+		focus(stack[new_ws].fwin);
+	}
 	
 	curws = new_ws;
 
@@ -120,6 +131,11 @@ void send_ws(void *arg) {
 	stack[curws].fwin = NULL;
 
 	refocus(curws);
+}
+
+void mywm_exit(void *arg) {
+	die();
+	exit(0);
 }
 
 #define snap_macro(A, B) void A(void *arg) { \
