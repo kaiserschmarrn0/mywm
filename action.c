@@ -97,20 +97,16 @@ void change_ws(void *arg) {
 		return;
 	}
 
-	if (stack[curws].fwin) {
-		unfocus(stack[curws].fwin);
-	}
-
 	traverse(curws, TYPE_NORMAL, hide); 
-	
 	xcb_ewmh_set_current_desktop(ewmh, 0, new_ws);
-	
 	traverse(new_ws, TYPE_NORMAL, show);
 
 	if (stack[new_ws].fwin) {
 		focus(stack[new_ws].fwin);
+	} else {
+		unfocus(stack[curws].fwin);
 	}
-	
+
 	curws = new_ws;
 
 	refocus(new_ws);

@@ -1,4 +1,3 @@
-#include <xcb/xcb_icccm.h>
 #include <xcb/shape.h>
 #include <string.h>
 
@@ -493,7 +492,32 @@ void cursor_clean(void) {
 	}
 }
 
-static window *create_window(xcb_window_t child, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+void install_normal_hints(window *win) {
+	if (!xcb_icccm_get_wm_normal_hints_reply(conn, xcb_icccm_get_wm_normal_hints_unchecked(conn,
+			win->windows[WIN_CHILD]), &win->hints, NULL)) {
+		memset(&win->hints, 0, sizeof(xcb_size_hints_t));
+		return;	
+	}
+
+#define MIN_WIDTH 160
+#define MIN_HEIGHT 90
+
+	if ((win->hints.flags & XCB_ICCCM_SIZE_HINT_BASE_SIZE) &&
+			!(win->hints.flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE)) {
+		win->hints.min_width = win->hints.base_width;
+		win->hints.min_height = win->hints.base_height;
+	} else {
+		win->hints.min_width = MIN_WIDTH;
+		win->hints.min_height = MIN_HEIGHT;
+	}
+
+	if (!(win->hints.flags & XCB_ICCCM_SIZE_HINT_P_RESIZE_INC)) {
+		win->hints.width_inc = 1;
+		win->hints.height_inc = 1;
+	}
+}
+
+static window *allocate_window(xcb_window_t child) {
 	window *win = malloc(sizeof(window));
 	win->windows[WIN_PARENT] = XCB_WINDOW_NONE;
 	win->windows[WIN_CHILD] = child;
@@ -508,7 +532,13 @@ static window *create_window(xcb_window_t child, uint32_t x, uint32_t y, uint32_
 
 	window_property_helper(xcb_ewmh_get_wm_window_type(ewmh, child), win, test_window_type);
 	window_property_helper(xcb_ewmh_get_wm_state(ewmh, child), win, test_window_state);
-	
+
+	install_normal_hints(win);
+
+	return win;
+}
+
+static window *create_window(window *win, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
 	if (!win->normal) {
 		return win;
 	}
@@ -641,16 +671,29 @@ static uint32_t place_helper(uint32_t ptr_pos, uint32_t win_sze, uint32_t scr_sz
 }
 
 void create_window_new(xcb_window_t child) {
+	window *win = allocate_window(child);
+
+	uint32_t w;
+	uint32_t h;
+	uint32_t x;
+	uint32_t y;
 	xcb_get_geometry_reply_t *geom = w_get_geometry(child);
-	xcb_query_pointer_reply_t *ptr = w_query_pointer();
-	uint32_t w = size_helper(geom->width + 2 * PAD, scr->width_in_pixels);
-	uint32_t h = size_helper(geom->height + PAD_N + PAD, scr->height_in_pixels - TOP - BOT);
-	uint32_t x = place_helper(ptr->root_x, w, scr->width_in_pixels);
-	uint32_t y = TOP + place_helper(ptr->root_y - TOP, h, scr->height_in_pixels - TOP - BOT);
-	free(ptr);
+	if (win->hints.flags & XCB_ICCCM_SIZE_HINT_US_POSITION) {
+		w = geom->width;
+		h = geom->height;
+		x = geom->x;
+		y = geom->y;
+	} else {
+		xcb_query_pointer_reply_t *ptr = w_query_pointer();
+		w = size_helper(geom->width + 2 * PAD, scr->width_in_pixels);
+		h = size_helper(geom->height + PAD_N + PAD, scr->height_in_pixels - TOP - BOT);
+		x = place_helper(ptr->root_x, w, scr->width_in_pixels);
+		y = TOP + place_helper(ptr->root_y - TOP, h, scr->height_in_pixels - TOP - BOT);
+		free(ptr);
+	}
 	free(geom);
 
-	window *win = create_window(child, x, y, w, h);
+	create_window(win, x, y, w, h);
 	
 	insert_into(curws, win);
 }
@@ -666,6 +709,8 @@ static uint32_t create_window_existing_place_helper(int start, uint32_t win_sze,
 }
 
 void create_window_existing(xcb_window_t child) {
+	window *win = allocate_window(child);
+
 	xcb_get_geometry_reply_t *geom = w_get_geometry(child);
 	uint32_t w = size_helper(geom->width + 2 * PAD, scr->width_in_pixels);
 	uint32_t h = size_helper(geom->height + PAD_N + PAD, scr->height_in_pixels - TOP - BOT);
@@ -673,7 +718,7 @@ void create_window_existing(xcb_window_t child) {
 	uint32_t y = TOP + create_window_existing_place_helper(geom->y - TOP - PAD_N, h, scr->height_in_pixels - TOP - BOT);
 	free(geom);
 
-	window *win = create_window(child, x, y, w, h);
+	create_window(win, x, y, w, h);
 	win->ignore_unmap = 1;
 	
 	insert_into(curws, win);

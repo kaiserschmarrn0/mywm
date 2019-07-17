@@ -1,7 +1,7 @@
 #include "workspace.h"
 #include "window.h"
 
-workspace stack[NUM_WS] = { { { NULL, NULL, 0 }, NULL } };
+workspace stack[NUM_WS] = { { { { NULL, NULL, 0 } }, NULL } };
 int curws = 0;
 
 void print_stack(int ws, int type) {

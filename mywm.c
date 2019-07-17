@@ -333,6 +333,7 @@ static void configure_request(xcb_generic_event_t *ev) {
 	window *found = search_all(NULL, TYPE_ALL, WIN_CHILD, e->window);
 	
 	uint32_t vals[6];
+	unsigned int i = 0;
 
 	if (!found || !found->normal) {
 		int i = mask_to_geo(e, vals);
@@ -346,8 +347,20 @@ static void configure_request(xcb_generic_event_t *ev) {
 	}
 	
 	if (!found->is_i_full && !found->is_e_full) {
-		mask_to_geo(e, vals);
 		uint32_t ignore = XCB_CONFIG_WINDOW_STACK_MODE | XCB_CONFIG_WINDOW_SIBLING;
+		
+		if (e->value_mask & XCB_CONFIG_WINDOW_X) {
+			vals[i++] = e->x - PAD;
+		}
+		if (e->value_mask & XCB_CONFIG_WINDOW_Y) {
+			vals[i++] = e->y - PAD_N;
+		}
+		if (e->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
+			vals[i++] = e->width - 2 * PAD;
+		}
+		if (e->value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
+			vals[i++] = e->height - PAD_N - PAD;
+		}
 
 		update_geometry(found, e->value_mask & ~ignore, vals);
 	}
@@ -477,7 +490,7 @@ int main(void) {
 	}
 
 	uint32_t mask = XCB_CW_EVENT_MASK;
-	uint32_t val = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+	uint32_t val = XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
 
 	xcb_change_window_attributes(conn, scr->root, mask, &val);
 	xcb_flush(conn);
@@ -580,31 +593,30 @@ int main(void) {
 	free(tr_reply);
 
 	struct pollfd fd;
-	
 	fd.fd = xcb_get_file_descriptor(conn);
 	fd.events = POLLIN;
 
-	xcb_generic_event_t *ev;
+	xcb_flush(conn);
 	for (; !xcb_connection_has_error(conn) && sigcode == 0;) {
-		xcb_flush(conn);
-
 		if (poll(&fd, 1, -1) == -1) {
 			break;
 		}
 
-		while(ev = xcb_poll_for_event(conn)) {
+		xcb_generic_event_t *ev;
+		while((ev = xcb_poll_for_event(conn))) {
 			if (ev->response_type == 0) {
 				xcb_generic_error_t *error = (xcb_generic_error_t *) ev;
 				printf("mywm: error:\n\terror_code: %d\n\tmajor_code: "
 						"%d\n\tminor_code: %d\n", error->error_code,
 						error->major_code, error->minor_code);
 			}
-
+	
 			if (events[ev->response_type & ~0x80]) {
-				printf("ev: %d\n", ev->response_type & ~0x80);
 				events[ev->response_type & ~0x80](ev);
 			}
 			free(ev);
+			
+			xcb_flush(conn);
 		}
 	}
 

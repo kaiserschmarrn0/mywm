@@ -1,6 +1,8 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
+#include <xcb/xcb_icccm.h>
+
 #include "config.h"
 
 #define GEOM_X 0
@@ -33,6 +35,8 @@ typedef struct window {
 	xcb_gcontext_t gc;
 
 	uint32_t geom[4];
+
+	xcb_size_hints_t hints;
 
 	uint32_t before_roll;
 	int is_roll;
