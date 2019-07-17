@@ -9,7 +9,7 @@ all: mywm
 	$(CC) -I/usr/X11R6/include -I/usr/include/freetype2 -I/usr/X11R6/include/freetype2 -c $<
 
 mywm: $(OBJ)
-	$(CC) -o $@ $(OBJ) -g -I/usr/X11R6/include -I/usr/include/freetype2 -L/usr/X11R6/include/freetype2 -L/usr/X11R6/lib -lm -lxcb -lxcb-shape -lxcb-keysyms -lxcb-ewmh -lxcb-icccm -lfreetype -lX11 -lX11-xcb -lXft
+	$(CC) -o $@ $(OBJ) -g -L/usr/X11R6/include/freetype2 -L/usr/X11R6/lib -lm -lxcb -lxcb-shape -lxcb-keysyms -lxcb-ewmh -lxcb-icccm -lfreetype -lX11 -lX11-xcb -lXft
 
 install: mywm
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
