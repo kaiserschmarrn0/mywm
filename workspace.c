@@ -195,12 +195,14 @@ window *search_all(int *ws, int type, int window_index, xcb_window_t id) {
 void refocus(int ws) {
 	window *win = stack[ws].lists[TYPE_NORMAL].first;
 	if (!win) {
+		xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT,
+				scr->root, XCB_CURRENT_TIME);
 		return;
 	}
 
-	if (win->is_i_full || win->is_e_full) {
+	/*if (win->is_i_full || win->is_e_full) {
 		mywm_raise(win);
-	}
+	}*/
 
 	focus(win);
 }

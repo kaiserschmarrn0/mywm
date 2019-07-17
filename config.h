@@ -9,6 +9,9 @@
 
 #define NUM_WS 4
 
+//manage pre-existing windows
+#define PICKUP
+
 #define TOP 0
 #define BOT 0
 #define GAP 0
@@ -20,30 +23,20 @@
 #define RESIZE_REGION_WIDTH 8
 #define RESIZE_REGION_CORNER 32
 
-//#define FOCUSCOL 0xff4d484a
 #define FOCUSCOL 0xff3d3a3c
 #define UNFOCUSCOL 0xff302e2f
 
-//#define UNFOCUSCOL 0xff242223
-
-//#define UNFOCUSCOL 0xff4d484a
-//#define FOCUSCOL 0xff4d484a
-
-#define CURSOR_FG 0xFFD7D7D7
+#define CURSOR_FG 0xFFd7d7d7
 #define CURSOR_BG 0xff242223
 
 #define MARGIN 5
 
+//disregard gaps when maximized
 #define SNAP_MAX_SMART
 
-/* rounded corners */
-
-//uncomment for rounded corners
+//rounded corners
 //#define ROUNDED
-
 #define RAD 2
-
-/* keyboard modifiers */
 
 #define MOD XCB_MOD_MASK_4
 #define SHIFT XCB_MOD_MASK_SHIFT
@@ -51,8 +44,6 @@
 static const char *fonts[] = {
 	"Font Awesome:size=12:autohint=true:antialias=true"
 };
-
-/* mouse controls */
 
 static const button grab_buttons[] = {
 	{ MOD, XCB_BUTTON_INDEX_1, mouse_move,   },
@@ -98,8 +89,6 @@ static const control controls[] = {
 };
 
 extern xcb_pixmap_t pixmaps[LEN(controls)][PM_COUNT]; //ree
-
-/* keyboard controls */
 
 static const keybind keys[] = {
 	{ MOD,         XK_q,     close,     NULL      },

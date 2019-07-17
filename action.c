@@ -93,23 +93,27 @@ void select_window(void *arg) {
 void change_ws(void *arg) {
 	int new_ws = *(int *)arg;
 
+	printf("ws: %d\n", new_ws);
+
 	if (new_ws == curws) {
 		return;
+	}
+
+	if (stack[curws].fwin) {
+		unfocus(stack[curws].fwin);
 	}
 
 	traverse(curws, TYPE_NORMAL, hide); 
 	xcb_ewmh_set_current_desktop(ewmh, 0, new_ws);
 	traverse(new_ws, TYPE_NORMAL, show);
 
+	curws = new_ws;
+
 	if (stack[new_ws].fwin) {
 		focus(stack[new_ws].fwin);
 	} else {
-		unfocus(stack[curws].fwin);
+		refocus(new_ws);
 	}
-
-	curws = new_ws;
-
-	refocus(new_ws);
 }
 
 void send_ws(void *arg) {

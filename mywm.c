@@ -203,13 +203,15 @@ static void button_press(xcb_generic_event_t *ev) {
 		return;
 	}
 
-	for (int i = WIN_COUNT; i < REGION_COUNT; i++) {
-		if (stack[curws].fwin->windows[i] == e->child) {
-			draw_region(stack[curws].fwin, i, PM_PRESS);
-			button_press_helper(e, controls[i - WIN_COUNT].buttons_len,
-					controls[i - WIN_COUNT].buttons, e->event,
-					e->event_x, e->event_y);
-			return;
+	if (stack[curws].fwin) {
+		for (int i = WIN_COUNT; i < REGION_COUNT; i++) {
+			if (stack[curws].fwin->windows[i] == e->child) {
+				draw_region(stack[curws].fwin, i, PM_PRESS);
+				button_press_helper(e, controls[i - WIN_COUNT].buttons_len,
+						controls[i - WIN_COUNT].buttons, e->event,
+						e->event_x, e->event_y);
+				return;
+			}
 		}
 	}
 
@@ -576,6 +578,12 @@ int main(void) {
 	xcb_query_tree_reply_t *tr_reply = xcb_query_tree_reply(conn,
 			xcb_query_tree(conn, scr->root), 0);
 
+	stack[0].fwin = NULL;
+	stack[1].fwin = NULL;
+	stack[2].fwin = NULL;
+	stack[3].fwin = NULL;
+
+#ifdef PICKUP
 	int ch_len = xcb_query_tree_children_length(tr_reply);
 	xcb_window_t *children = xcb_query_tree_children(tr_reply);
 
@@ -591,6 +599,7 @@ int main(void) {
 	}
 
 	free(tr_reply);
+#endif
 
 	struct pollfd fd;
 	fd.fd = xcb_get_file_descriptor(conn);

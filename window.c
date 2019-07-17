@@ -164,9 +164,9 @@ void hide(window *win) {
 	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win->windows[WIN_CHILD], wm_atoms[WM_STATE], 
 			wm_atoms[WM_STATE], 32, 2, vals);
 
-	win->ignore_unmap = 1;
-
 	ewmh_state(win);
+	
+	win->ignore_unmap = 1;
 }
 
 void frame_extents(xcb_window_t win) { //unused aorn
